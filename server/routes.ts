@@ -28,7 +28,27 @@ export async function registerRoutes(
   // Apply general rate limiting
   app.use("/api", generalLimiter);
   
-  // API Documentation endpoint
+  /**
+   * @swagger
+   * /api:
+   *   get:
+   *     summary: API Information
+   *     tags: [Info]
+   *     responses:
+   *       200:
+   *         description: API information and available endpoints
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 message:
+   *                   type: string
+   *                 version:
+   *                   type: string
+   *                 documentation:
+   *                   type: string
+   */
   app.get("/api", (req, res) => {
     res.json({
       message: "E-commerce API",
@@ -78,6 +98,42 @@ export async function registerRoutes(
   });
   
   // Authentication routes with stricter rate limiting
+  /**
+   * @swagger
+   * /api/auth/register:
+   *   post:
+   *     summary: Register a new user
+   *     tags: [Authentication]
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - username
+   *               - email
+   *               - password
+   *             properties:
+   *               username:
+   *                 type: string
+   *                 minLength: 3
+   *               email:
+   *                 type: string
+   *                 format: email
+   *               password:
+   *                 type: string
+   *                 minLength: 6
+   *     responses:
+   *       201:
+   *         description: User registered successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/User'
+   *       400:
+   *         description: Validation error or user already exists
+   */
   app.post("/api/auth/register", authLimiter, asyncHandler(async (req: Request, res: Response) => {
     try {
       const { username, password, email } = insertUserSchema.parse(req.body);
@@ -109,6 +165,36 @@ export async function registerRoutes(
     }
   }));
 
+  /**
+   * @swagger
+   * /api/auth/login:
+   *   post:
+   *     summary: Login user
+   *     tags: [Authentication]
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - username
+   *               - password
+   *             properties:
+   *               username:
+   *                 type: string
+   *               password:
+   *                 type: string
+   *     responses:
+   *       200:
+   *         description: Login successful
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/User'
+   *       401:
+   *         description: Invalid credentials
+   */
   app.post("/api/auth/login", authLimiter, passport.authenticate("local"), (req: Request, res: Response) => {
     if (req.user) {
       res.json({ 
@@ -125,6 +211,24 @@ export async function registerRoutes(
     }
   });
 
+  /**
+   * @swagger
+   * /api/auth/logout:
+   *   post:
+   *     summary: Logout user
+   *     tags: [Authentication]
+   *     responses:
+   *       200:
+   *         description: Logout successful
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 message:
+   *                   type: string
+   *                   example: "Logged out successfully"
+   */
   app.post("/api/auth/logout", (req, res) => {
     req.logout((err) => {
       if (err) {
@@ -134,6 +238,38 @@ export async function registerRoutes(
     });
   });
 
+  /**
+   * @swagger
+   * /api/auth/me:
+   *   get:
+   *     summary: Get current user info
+   *     tags: [Authentication]
+   *     responses:
+   *       200:
+   *         description: Current user information
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/User'
+   *       401:
+   *         description: Not authenticated
+   */
+  /**
+   * @swagger
+   * /api/auth/me:
+   *   get:
+   *     summary: Get current user info
+   *     tags: [Authentication]
+   *     responses:
+   *       200:
+   *         description: Current user information
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/User'
+   *       401:
+   *         description: Not authenticated
+   */
   app.get("/api/auth/me", (req, res) => {
     if (req.isAuthenticated()) {
       res.json({ 
@@ -150,6 +286,29 @@ export async function registerRoutes(
   });
   
   // Categories
+  /**
+   * @swagger
+   * /api/categories:
+   *   get:
+   *     summary: Get all categories
+   *     tags: [Categories]
+   *     responses:
+   *       200:
+   *         description: List of all categories
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: array
+   *               items:
+   *                 type: object
+   *                 properties:
+   *                   id:
+   *                     type: integer
+   *                   name:
+   *                     type: string
+   *                   description:
+   *                     type: string
+   */
   app.get("/api/categories", async (req, res) => {
     try {
       const categories = await storage.getCategories();
@@ -160,6 +319,43 @@ export async function registerRoutes(
   });
 
   // Products
+  /**
+   * @swagger
+   * /api/products:
+   *   get:
+   *     summary: Get products with optional filters
+   *     tags: [Products]
+   *     parameters:
+   *       - in: query
+   *         name: category
+   *         schema:
+   *           type: string
+   *         description: Filter by category name
+   *       - in: query
+   *         name: minPrice
+   *         schema:
+   *           type: number
+   *         description: Minimum price filter
+   *       - in: query
+   *         name: maxPrice
+   *         schema:
+   *           type: number
+   *         description: Maximum price filter
+   *       - in: query
+   *         name: search
+   *         schema:
+   *           type: string
+   *         description: Search in product name and description
+   *     responses:
+   *       200:
+   *         description: List of products
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: array
+   *               items:
+   *                 $ref: '#/components/schemas/Product'
+   */
   app.get("/api/products", async (req, res) => {
     try {
       const filters: any = {};
@@ -181,6 +377,52 @@ export async function registerRoutes(
     }
   });
 
+  /**
+   * @swagger
+   * /api/products/{id}:
+   *   get:
+   *     summary: Get single product by ID
+   *     tags: [Products]
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: integer
+   *         description: Product ID
+   *     responses:
+   *       200:
+   *         description: Product details
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/Product'
+   *       404:
+   *         description: Product not found
+   */
+  /**
+   * @swagger
+   * /api/products/{id}:
+   *   get:
+   *     summary: Get single product by ID
+   *     tags: [Products]
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: integer
+   *         description: Product ID
+   *     responses:
+   *       200:
+   *         description: Product details
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/Product'
+   *       404:
+   *         description: Product not found
+   */
   app.get("/api/products/:id", async (req, res) => {
     try {
       const product = await storage.getProduct(req.params.id);
@@ -194,6 +436,31 @@ export async function registerRoutes(
   });
 
   // Reviews
+  /**
+   * @swagger
+   * /api/reviews/{productId}:
+   *   get:
+   *     summary: Get reviews for a product
+   *     tags: [Reviews]
+   *     parameters:
+   *       - in: path
+   *         name: productId
+   *         required: true
+   *         schema:
+   *           type: string
+   *         description: Product ID to get reviews for
+   *     responses:
+   *       200:
+   *         description: List of reviews for the product
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: array
+   *               items:
+   *                 $ref: '#/components/schemas/Review'
+   *       500:
+   *         description: Failed to fetch reviews
+   */
   app.get("/api/reviews/:productId", async (req, res) => {
     try {
       const reviews = await storage.getReviewsByProduct(req.params.productId);
@@ -203,6 +470,61 @@ export async function registerRoutes(
     }
   });
 
+  /**
+   * @swagger
+   * /api/reviews/{productId}:
+   *   post:
+   *     summary: Create a new review for a product
+   *     tags: [Reviews]
+   *     parameters:
+   *       - in: path
+   *         name: productId
+   *         required: true
+   *         schema:
+   *           type: string
+   *         description: Product ID to review
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - userName
+   *               - rating
+   *               - title
+   *               - content
+   *             properties:
+   *               userName:
+   *                 type: string
+   *                 description: Name of the reviewer
+   *               rating:
+   *                 type: integer
+   *                 minimum: 1
+   *                 maximum: 5
+   *                 description: Rating from 1 to 5 stars
+   *               title:
+   *                 type: string
+   *                 description: Review title
+   *               content:
+   *                 type: string
+   *                 description: Review content
+   *               isVerified:
+   *                 type: boolean
+   *                 description: Whether this is a verified purchase
+   *                 default: false
+   *     responses:
+   *       201:
+   *         description: Review created successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/Review'
+   *       400:
+   *         description: Invalid review data
+   *       500:
+   *         description: Failed to create review
+   */
   app.post("/api/reviews/:productId", async (req: Request, res: Response) => {
     try {
       const reviewData = {
@@ -232,6 +554,31 @@ export async function registerRoutes(
   });
 
   // Cart
+  /**
+   * @swagger
+   * /api/cart:
+   *   get:
+   *     summary: Get cart items
+   *     tags: [Cart]
+   *     parameters:
+   *       - in: query
+   *         name: sessionId
+   *         required: true
+   *         schema:
+   *           type: string
+   *         description: Session ID for cart identification
+   *     responses:
+   *       200:
+   *         description: Cart items
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: array
+   *               items:
+   *                 $ref: '#/components/schemas/CartItem'
+   *       400:
+   *         description: Missing session ID
+   */
   app.get("/api/cart", async (req, res) => {
     try {
       const sessionId = req.query.sessionId as string;
@@ -245,6 +592,40 @@ export async function registerRoutes(
     }
   });
 
+  /**
+   * @swagger
+   * /api/cart:
+   *   post:
+   *     summary: Add item to cart
+   *     tags: [Cart]
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - sessionId
+   *               - productId
+   *               - quantity
+   *             properties:
+   *               sessionId:
+   *                 type: string
+   *               productId:
+   *                 type: integer
+   *               quantity:
+   *                 type: integer
+   *                 minimum: 1
+   *     responses:
+   *       201:
+   *         description: Item added to cart
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/CartItem'
+   *       400:
+   *         description: Invalid input
+   */
   app.post("/api/cart", async (req, res) => {
     try {
       const { productId, quantity, sessionId } = req.body;
@@ -306,6 +687,31 @@ export async function registerRoutes(
   });
 
   // Orders
+  /**
+   * @swagger
+   * /api/orders:
+   *   get:
+   *     summary: Get user orders
+   *     tags: [Orders]
+   *     parameters:
+   *       - in: query
+   *         name: sessionId
+   *         required: true
+   *         schema:
+   *           type: string
+   *         description: Session ID for order identification
+   *     responses:
+   *       200:
+   *         description: List of user orders
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: array
+   *               items:
+   *                 $ref: '#/components/schemas/Order'
+   *       400:
+   *         description: Missing session ID
+   */
   app.get("/api/orders", async (req, res) => {
     try {
       const sessionId = req.query.sessionId as string;
@@ -332,6 +738,40 @@ export async function registerRoutes(
     }
   });
 
+  /**
+   * @swagger
+   * /api/orders:
+   *   post:
+   *     summary: Create new order
+   *     tags: [Orders]
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - sessionId
+   *               - shippingAddress
+   *               - totalAmount
+   *             properties:
+   *               sessionId:
+   *                 type: string
+   *               shippingAddress:
+   *                 type: string
+   *               totalAmount:
+   *                 type: number
+   *                 minimum: 0
+   *     responses:
+   *       201:
+   *         description: Order created successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/Order'
+   *       400:
+   *         description: Invalid input or empty cart
+   */
   app.post("/api/orders", async (req, res) => {
     try {
       const { sessionId, shippingAddress, paymentMethod, items, subtotal, shipping, tax, total } = req.body;
@@ -374,6 +814,44 @@ export async function registerRoutes(
     }
   });
 
+  /**
+   * @swagger
+   * /api/admin/products:
+   *   get:
+   *     summary: Get all products (admin)
+   *     tags: [Admin]
+   *     security:
+   *       - sessionAuth: []
+   *     responses:
+   *       200:
+   *         description: List of all products
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: array
+   *               items:
+   *                 $ref: '#/components/schemas/Product'
+   *   post:
+   *     summary: Create new product
+   *     tags: [Admin]
+   *     security:
+   *       - sessionAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             $ref: '#/components/schemas/Product'
+   *     responses:
+   *       201:
+   *         description: Product created successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/Product'
+   *       400:
+   *         description: Invalid product data
+   */
   app.get("/api/admin/products", requireAuth, requireAdmin, async (req, res) => {
     try {
       const products = await storage.getProducts();
