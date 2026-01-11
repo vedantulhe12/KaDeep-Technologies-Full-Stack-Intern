@@ -1,13 +1,24 @@
-import type { Express } from "express";
+import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import passport from "passport";
 import bcrypt from "bcrypt";
 import { storage } from "./storage";
-import { insertReviewSchema, insertCartItemSchema, insertUserSchema } from "@shared/schema";
+import { insertReviewSchema, insertCartItemSchema, insertUserSchema, type User } from "@shared/schema";
 import { requireAuth, requireAdmin } from "./auth";
 import { authLimiter, generalLimiter, validateSchema, asyncHandler } from "./middleware";
-import { registerAdminRoutes } from "./admin-routes";
 import { z } from "zod";
+
+// Extend Express Request to include user
+declare global {
+  namespace Express {
+    interface User {
+      id: string;
+      username: string;
+      email: string;
+      role: 'admin' | 'customer';
+    }
+  }
+}
 
 export async function registerRoutes(
   httpServer: Server,
@@ -17,8 +28,57 @@ export async function registerRoutes(
   // Apply general rate limiting
   app.use("/api", generalLimiter);
   
+  // API Documentation endpoint
+  app.get("/api", (req, res) => {
+    res.json({
+      message: "E-commerce API",
+      version: "1.0.0",
+      documentation: "Full interactive API documentation available at /api-docs",
+      swagger: "http://localhost:5000/api-docs",
+      openapi_spec: "http://localhost:5000/api-docs.json",
+      endpoints: {
+        authentication: {
+          "POST /api/auth/register": "Register a new user",
+          "POST /api/auth/login": "Login user",
+          "POST /api/auth/logout": "Logout user",
+          "GET /api/auth/me": "Get current user info"
+        },
+        categories: {
+          "GET /api/categories": "Get all categories"
+        },
+        products: {
+          "GET /api/products": "Get products with optional filters",
+          "GET /api/products/:id": "Get single product by ID"
+        },
+        reviews: {
+          "GET /api/reviews/:productId": "Get reviews for a product",
+          "POST /api/reviews/:productId": "Create a new review"
+        },
+        cart: {
+          "GET /api/cart": "Get cart items (requires sessionId query param)",
+          "POST /api/cart": "Add item to cart",
+          "PATCH /api/cart/:productId": "Update cart item quantity",
+          "DELETE /api/cart/:productId": "Remove item from cart",
+          "DELETE /api/cart/clear": "Clear entire cart"
+        },
+        orders: {
+          "GET /api/orders": "Get user orders (requires sessionId query param)",
+          "GET /api/orders/:id": "Get specific order",
+          "POST /api/orders": "Create new order"
+        },
+        admin: {
+          "GET /api/admin/stats": "Get dashboard statistics (admin only)",
+          "GET /api/admin/products": "Get all products for admin (admin only)",
+          "POST /api/admin/products": "Create new product (admin only)",
+          "GET /api/admin/orders": "Get all orders (admin only)",
+          "GET /api/admin/users": "Get all users (admin only)"
+        }
+      }
+    });
+  });
+  
   // Authentication routes with stricter rate limiting
-  app.post("/api/auth/register", authLimiter, asyncHandler(async (req, res) => {
+  app.post("/api/auth/register", authLimiter, asyncHandler(async (req: Request, res: Response) => {
     try {
       const { username, password, email } = insertUserSchema.parse(req.body);
       
@@ -49,16 +109,20 @@ export async function registerRoutes(
     }
   }));
 
-  app.post("/api/auth/login", authLimiter, passport.authenticate("local"), (req, res) => {
-    res.json({ 
-      message: "Login successful", 
-      user: { 
-        id: req.user.id, 
-        username: req.user.username, 
-        email: req.user.email,
-        role: req.user.role 
-      } 
-    });
+  app.post("/api/auth/login", authLimiter, passport.authenticate("local"), (req: Request, res: Response) => {
+    if (req.user) {
+      res.json({ 
+        message: "Login successful", 
+        user: { 
+          id: req.user.id, 
+          username: req.user.username, 
+          email: req.user.email,
+          role: req.user.role 
+        } 
+      });
+    } else {
+      res.status(401).json({ error: "Authentication failed" });
+    }
   });
 
   app.post("/api/auth/logout", (req, res) => {
@@ -139,20 +203,24 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/reviews/:productId", async (req, res) => {
+  app.post("/api/reviews/:productId", async (req: Request, res: Response) => {
     try {
       const reviewData = {
-        ...req.body,
         productId: req.params.productId,
+        userName: req.body.userName,
+        rating: req.body.rating,
+        title: req.body.title,
+        content: req.body.content,
+        isVerified: req.body.isVerified || false,
+        helpfulCount: 0,
         createdAt: new Date().toLocaleDateString("en-US", {
           month: "long",
           day: "numeric",
           year: "numeric",
         }),
-        helpfulCount: 0,
       };
 
-      const validatedData = insertReviewSchema.omit({ id: true }).parse(reviewData);
+      const validatedData = insertReviewSchema.parse(reviewData);
       const review = await storage.createReview(validatedData);
       res.status(201).json(review);
     } catch (error) {
@@ -296,8 +364,56 @@ export async function registerRoutes(
     }
   });
 
-  // Register admin routes
-  registerAdminRoutes(app);
+  // Admin routes
+  app.get("/api/admin/stats", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const stats = await storage.getStats();
+      res.json(stats);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch stats" });
+    }
+  });
+
+  app.get("/api/admin/products", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const products = await storage.getProducts();
+      res.json(products);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch products" });
+    }
+  });
+
+  app.post("/api/admin/products", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const productData = {
+        ...req.body,
+        id: "prod-" + Date.now(),
+      };
+      
+      const product = await storage.createProduct(productData);
+      res.status(201).json(product);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create product" });
+    }
+  });
+
+  app.get("/api/admin/orders", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const orders = await storage.getAllOrders();
+      res.json(orders);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch orders" });
+    }
+  });
+
+  app.get("/api/admin/users", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const users = await storage.getUsers();
+      res.json(users);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch users" });
+    }
+  });
 
   return httpServer;
 }

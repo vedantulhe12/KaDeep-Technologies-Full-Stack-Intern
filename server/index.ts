@@ -6,6 +6,7 @@ import { createServer } from "http";
 import { setupAuth } from "./auth";
 import { securityHeaders, errorHandler } from "./middleware";
 import { config, validateRequiredEnv } from "./config";
+import { setupSwagger } from "./swagger";
 
 const app = express();
 const httpServer = createServer(app);
@@ -86,6 +87,9 @@ app.use((req, res, next) => {
 
 (async () => {
   await registerRoutes(httpServer, app);
+
+  // Setup Swagger documentation
+  setupSwagger(app);
 
   // Error handling middleware (must be last)
   app.use(errorHandler);

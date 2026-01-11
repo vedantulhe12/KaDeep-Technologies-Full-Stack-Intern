@@ -58,6 +58,16 @@ export interface IStorage {
   getOrders(sessionId: string): Promise<OrderWithItems[]>;
   getOrder(id: string): Promise<OrderWithItems | undefined>;
   createOrder(order: InsertOrder, items: InsertOrderItem[]): Promise<OrderWithItems>;
+  getAllOrders(): Promise<OrderWithItems[]>;
+
+  // Admin
+  getStats(): Promise<{
+    totalProducts: number;
+    totalOrders: number;
+    totalRevenue: number;
+    recentOrders: OrderWithItems[];
+  }>;
+  getUsers(): Promise<User[]>;
 }
 
 export class MemStorage implements IStorage {
@@ -640,6 +650,50 @@ export class MemStorage implements IStorage {
     }
 
     return { ...order, items: orderItems };
+  }
+
+  async getAllOrders(): Promise<OrderWithItems[]> {
+    const ordersArray = Array.from(this.orders.values());
+    const ordersWithItems: OrderWithItems[] = [];
+
+    for (const order of ordersArray) {
+      const items = Array.from(this.orderItems.values()).filter(
+        item => item.orderId === order.id
+      );
+      ordersWithItems.push({ ...order, items });
+    }
+
+    return ordersWithItems.sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+  }
+
+  async getStats(): Promise<{
+    totalProducts: number;
+    totalOrders: number;
+    totalRevenue: number;
+    recentOrders: OrderWithItems[];
+  }> {
+    const totalProducts = this.products.size;
+    const totalOrders = this.orders.size;
+    
+    let totalRevenue = 0;
+    for (const order of this.orders.values()) {
+      totalRevenue += order.total;
+    }
+
+    const recentOrders = (await this.getAllOrders()).slice(0, 10);
+
+    return {
+      totalProducts,
+      totalOrders,
+      totalRevenue,
+      recentOrders,
+    };
+  }
+
+  async getUsers(): Promise<User[]> {
+    return Array.from(this.users.values());
   }
 }
 
