@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import bcrypt from "bcrypt";
 import type {
   User,
   InsertUser,
@@ -89,6 +90,7 @@ export class MemStorage implements IStorage {
     this.orderItems = new Map();
 
     this.seedData();
+    this.seedTestUsers();
   }
 
   private seedData() {
@@ -418,6 +420,66 @@ export class MemStorage implements IStorage {
     sampleReviews.forEach((rev) => this.reviews.set(rev.id, rev));
   }
 
+  private seedTestUsers() {
+    // Pre-hashed passwords to avoid async issues
+    // admin123 hashed with bcrypt
+    const adminPasswordHash = "$2b$10$kYk2w9T5IKYgihX5OQ2i7.pJqG/fnf57pHtQPqok8U0A3Pj63NdEm";
+    // user123 hashed with bcrypt  
+    const userPasswordHash = "$2b$10$bRD6bTbdA91bk9s06NPR3OF16gAbaCW1vK0ur83R7yN6lBjkL.siS";
+
+    const adminUser = {
+      id: "admin-1",
+      username: "admin",
+      email: "admin@example.com", 
+      password: adminPasswordHash,
+      role: "admin" as const,
+      createdAt: new Date().toISOString(),
+    };
+
+    const testUser = {
+      id: "user-1",
+      username: "testuser",
+      email: "user@example.com",
+      password: userPasswordHash,
+      role: "user" as const,
+      createdAt: new Date().toISOString(),
+    };
+
+    this.users.set(adminUser.id, adminUser);
+    this.users.set(testUser.id, testUser);
+  }
+
+  private async seedUsers() {
+    try {
+      // Create admin user
+      const adminPassword = await bcrypt.hash("admin123", 10);
+      const adminUser = {
+        id: "admin-1",
+        username: "admin",
+        email: "admin@example.com",
+        password: adminPassword,
+        role: "admin" as const,
+        createdAt: new Date().toISOString(),
+      };
+
+      // Create test user  
+      const userPassword = await bcrypt.hash("user123", 10);
+      const testUser = {
+        id: "user-1",
+        username: "testuser",
+        email: "user@example.com",
+        password: userPassword,
+        role: "user" as const,
+        createdAt: new Date().toISOString(),
+      };
+
+      this.users.set(adminUser.id, adminUser);
+      this.users.set(testUser.id, testUser);
+    } catch (error) {
+      console.error("Failed to seed users:", error);
+    }
+  }
+
   // User methods
   async getUser(id: string): Promise<User | undefined> {
     return this.users.get(id);
@@ -425,7 +487,7 @@ export class MemStorage implements IStorage {
 
   async getUserByUsername(username: string): Promise<User | undefined> {
     return Array.from(this.users.values()).find(
-      (user) => user.username === username
+      (user) => user.username === username || user.email === username
     );
   }
 

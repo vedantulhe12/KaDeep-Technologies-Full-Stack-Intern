@@ -1,6 +1,8 @@
 import { db } from "./db";
-import { categories, products, reviews } from "@shared/schema";
-import type { Category, Product, Review } from "@shared/schema";
+import { categories, products, reviews, users } from "@shared/schema";
+import type { Category, Product, Review, User } from "@shared/schema";
+import bcrypt from "bcrypt";
+import { storage } from "./storage";
 
 const sampleCategories: Category[] = [
   { id: "electronics", name: "Electronics", icon: "electronics", imageUrl: null },
@@ -162,6 +164,34 @@ export async function seedDatabase() {
     // Insert reviews
     console.log("⭐ Inserting reviews...");
     await db.insert(reviews).values(sampleReviews);
+
+    // Create admin and test users
+    console.log("👤 Creating users...");
+    const adminPassword = await bcrypt.hash("admin123", 10);
+    const userPassword = await bcrypt.hash("user123", 10);
+
+    const sampleUsers = [
+      {
+        id: "admin-1",
+        username: "admin",
+        email: "admin@example.com",
+        password: adminPassword,
+        role: "admin" as const,
+        createdAt: new Date().toISOString(),
+      },
+      {
+        id: "user-1", 
+        username: "testuser",
+        email: "user@example.com",
+        password: userPassword,
+        role: "user" as const,
+        createdAt: new Date().toISOString(),
+      }
+    ];
+
+    await db.insert(users).values(sampleUsers);
+    console.log("✅ Admin user: admin@example.com / admin123");
+    console.log("✅ Test user: user@example.com / user123");
 
     console.log("✅ Database seeded successfully!");
   } catch (error) {

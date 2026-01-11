@@ -48,6 +48,9 @@ app.use(express.urlencoded({ extended: false }));
 // Setup authentication
 setupAuth(app);
 
+// Register API routes  
+const server = await registerRoutes(httpServer, app);
+
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
     hour: "numeric",

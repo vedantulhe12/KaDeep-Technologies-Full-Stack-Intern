@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
-import { Search, ShoppingCart, Menu, User, MapPin, ChevronDown } from "lucide-react";
+import { Search, ShoppingCart, Menu, User, MapPin, ChevronDown, LogOut, Settings, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -8,11 +8,13 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useCart } from "@/lib/cart-context";
+import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 
 const categories = [
@@ -38,6 +40,7 @@ export function Header() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
   const { itemCount } = useCart();
+  const { user, logout } = useAuth();
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -45,6 +48,11 @@ export function Header() {
     if (searchQuery) params.set("search", searchQuery);
     if (selectedCategory) params.set("category", selectedCategory);
     setLocation(`/products${params.toString() ? `?${params.toString()}` : ""}`);
+  };
+
+  const handleLogout = async () => {
+    await logout();
+    setLocation('/');
   };
 
   return (
@@ -155,16 +163,55 @@ export function Header() {
         <div className="flex items-center gap-1">
           <ThemeToggle />
 
-          <Button
-            variant="ghost"
-            className="hidden md:flex flex-col items-start gap-0 h-auto py-2"
-            data-testid="button-account"
-          >
-            <span className="text-xs text-muted-foreground">Hello, Sign in</span>
-            <span className="text-sm font-semibold flex items-center gap-1">
-              Account <ChevronDown className="h-3 w-3" />
-            </span>
-          </Button>
+          {user ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  className="hidden md:flex flex-col items-start gap-0 h-auto py-2"
+                  data-testid="button-account"
+                >
+                  <span className="text-xs text-muted-foreground">Hello, {user.username}</span>
+                  <span className="text-sm font-semibold flex items-center gap-1">
+                    Account {user.role === 'admin' && <Badge variant="secondary" className="text-xs">Admin</Badge>}
+                    <ChevronDown className="h-3 w-3" />
+                  </span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuItem onClick={() => setLocation('/orders')}>
+                  <Settings className="mr-2 h-4 w-4" />
+                  My Orders
+                </DropdownMenuItem>
+                {user.role === 'admin' && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => setLocation('/admin')}>
+                      <ShieldCheck className="mr-2 h-4 w-4" />
+                      Admin Panel
+                    </DropdownMenuItem>
+                  </>
+                )}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleLogout}>
+                  <LogOut className="mr-2 h-4 w-4" />
+                  Logout
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <Button
+              variant="ghost"
+              className="hidden md:flex flex-col items-start gap-0 h-auto py-2"
+              onClick={() => setLocation('/login')}
+              data-testid="button-signin"
+            >
+              <span className="text-xs text-muted-foreground">Hello, Sign in</span>
+              <span className="text-sm font-semibold flex items-center gap-1">
+                Account <ChevronDown className="h-3 w-3" />
+              </span>
+            </Button>
+          )}
 
           <Button
             variant="ghost"
