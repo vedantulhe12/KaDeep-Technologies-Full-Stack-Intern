@@ -9,6 +9,10 @@ import { config, validateRequiredEnv } from "./config";
 import { setupSwagger } from "./swagger";
 
 const app = express();
+
+/* ✅ REQUIRED FOR RENDER / PROXIES */
+app.set("trust proxy", 1);
+
 const httpServer = createServer(app);
 
 declare module "http" {
@@ -20,38 +24,44 @@ declare module "http" {
 // Validate environment configuration
 validateRequiredEnv();
 
+/* =========================
+   MIDDLEWARE ORDER (IMPORTANT)
+========================= */
+
 // Security headers
 app.use(securityHeaders);
 
-// Session configuration
-app.use(session({
-  secret: config.auth.sessionSecret,
-  resave: false,
-  saveUninitialized: false,
-  cookie: {
-    secure: config.isProduction,
-    httpOnly: true,
-    maxAge: 24 * 60 * 60 * 1000, // 24 hours
-  },
-}));
-
+// Body parsers FIRST
 app.use(
   express.json({
     verify: (req, _res, buf) => {
       req.rawBody = buf;
     },
-  }),
+  })
 );
-
 app.use(express.urlencoded({ extended: false }));
 
-// Setup authentication
+// Session configuration
+app.use(
+  session({
+    secret: config.auth.sessionSecret,
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: config.isProduction,
+      httpOnly: true,
+      sameSite: "lax", // ✅ REQUIRED FOR PROD
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    },
+  })
+);
+
+// Setup authentication (passport)
 setupAuth(app);
 
-// Register API routes  
-(async () => {
-  const server = await registerRoutes(httpServer, app);
-})().catch(console.error);
+/* =========================
+   REQUEST LOGGER
+========================= */
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
@@ -67,7 +77,7 @@ export function log(message: string, source = "express") {
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
+  let capturedJsonResponse: Record<string, any> | undefined;
 
   const originalResJson = res.json;
   res.json = function (bodyJson, ...args) {
@@ -82,7 +92,6 @@ app.use((req, res, next) => {
       if (capturedJsonResponse) {
         logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
       }
-
       log(logLine);
     }
   });
@@ -90,7 +99,12 @@ app.use((req, res, next) => {
   next();
 });
 
+/* =========================
+   MAIN BOOTSTRAP
+========================= */
+
 (async () => {
+  // Register API routes (ONLY ONCE)
   await registerRoutes(httpServer, app);
 
   // Setup Swagger documentation
@@ -102,14 +116,10 @@ app.use((req, res, next) => {
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
-
     res.status(status).json({ message });
-    throw err;
   });
 
-  // importantly only setup vite in development and after
-  // setting up all the other routes so the catch-all route
-  // doesn't interfere with the other routes
+  // Serve frontend
   if (config.isProduction) {
     serveStatic(app);
   } else {
@@ -117,11 +127,8 @@ app.use((req, res, next) => {
     await setupVite(httpServer, app);
   }
 
-  // ALWAYS serve the app on the port specified in the environment variable PORT
-  // Other ports are firewalled. Default to 5000 if not specified.
-  // this serves both the API and the client.
-  // It is the only port that is not firewalled.
+  // Start server
   httpServer.listen(config.port, () => {
-    log(`serving on http://localhost:${config.port}`);
+    log(`serving on port ${config.port}`);
   });
-})();
+})().catch(console.error);
