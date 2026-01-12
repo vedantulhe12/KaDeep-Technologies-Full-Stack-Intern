@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
-import { Search, ShoppingCart, Menu, User, MapPin, ChevronDown, LogOut, Settings, ShieldCheck } from "lucide-react";
+import { Search, ShoppingCart, Heart, Menu, User, MapPin, ChevronDown, LogOut, Settings, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +14,7 @@ import {
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useCart } from "@/lib/cart-context";
+import { useWishlist } from "@/lib/wishlist-context";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 
@@ -40,14 +41,23 @@ export function Header() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
   const { itemCount } = useCart();
+  const { wishlistCount } = useWishlist();
   const { user, logout } = useAuth();
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     const params = new URLSearchParams();
-    if (searchQuery) params.set("search", searchQuery);
+    
+    // Trim and ensure search query is properly encoded
+    const trimmedQuery = searchQuery.trim();
+    if (trimmedQuery) params.set("search", trimmedQuery);
     if (selectedCategory) params.set("category", selectedCategory);
-    setLocation(`/products${params.toString() ? `?${params.toString()}` : ""}`);
+    
+    const queryString = params.toString();
+    const url = `/products${queryString ? `?${queryString}` : ""}`;
+    
+    console.log(`🔍 Frontend search: "${trimmedQuery}" -> ${url}`);
+    setLocation(url);
   };
 
   const handleLogout = async () => {
@@ -223,6 +233,25 @@ export function Header() {
             <span className="text-sm font-semibold">& Orders</span>
           </Button>
 
+          <Link href="/wishlist">
+            <Button
+              variant="ghost"
+              className="relative flex items-center gap-1"
+              data-testid="button-wishlist"
+            >
+              <Heart className="h-6 w-6" />
+              {wishlistCount > 0 && (
+                <Badge
+                  variant="secondary"
+                  className="absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center p-0 text-xs"
+                >
+                  {wishlistCount > 99 ? "99+" : wishlistCount}
+                </Badge>
+              )}
+              <span className="hidden sm:inline font-semibold">Wishlist</span>
+            </Button>
+          </Link>
+
           <Link href="/cart">
             <Button
               variant="ghost"
@@ -245,10 +274,28 @@ export function Header() {
       </div>
 
       <nav className="hidden md:flex items-center gap-1 px-4 h-10 bg-sidebar-accent text-sidebar-accent-foreground overflow-x-auto">
-        <Button variant="ghost" size="sm" className="shrink-0 gap-1" data-testid="button-all-menu">
-          <Menu className="h-4 w-4" />
-          <span>All</span>
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="sm" className="shrink-0 gap-1" data-testid="button-all-menu">
+              <Menu className="h-4 w-4" />
+              <span>All</span>
+              <ChevronDown className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-48">
+            {categories.map((category) => (
+              <DropdownMenuItem key={category.value} asChild>
+                <Link 
+                  href={category.value ? `/products?category=${category.value}` : '/products'}
+                  className="w-full cursor-pointer"
+                  data-testid={`all-menu-${category.value || "all"}`}
+                >
+                  {category.name}
+                </Link>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
         {navLinks.map((link) => (
           <Link key={link.name} href={link.href}>
             <Button

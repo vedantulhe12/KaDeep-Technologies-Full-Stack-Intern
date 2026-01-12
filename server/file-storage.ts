@@ -1,5 +1,7 @@
 import { randomUUID } from "crypto";
 import bcrypt from "bcrypt";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
+import { join } from "path";
 import type {
   User,
   InsertUser,
@@ -17,88 +19,84 @@ import type {
   InsertOrderItem,
   OrderWithItems,
 } from "@shared/schema";
-import { FileStorage } from "./file-storage";
+import { IStorage } from "./storage";
 
-export interface IStorage {
-  // Users
-  getUser(id: string): Promise<User | undefined>;
-  getUserByUsername(username: string): Promise<User | undefined>;
-  createUser(user: InsertUser): Promise<User>;
-
-  // Categories
-  getCategories(): Promise<Category[]>;
-  getCategory(id: string): Promise<Category | undefined>;
-
-  // Products
-  getProducts(filters?: {
-    category?: string;
-    search?: string;
-    deals?: boolean;
-    featured?: boolean;
-    minPrice?: number;
-    maxPrice?: number;
-    minRating?: number;
-    isPrime?: boolean;
-    limit?: number;
-  }): Promise<Product[]>;
-  getProduct(id: string): Promise<Product | undefined>;
-  createProduct(product: InsertProduct): Promise<Product>;
-  updateProduct(id: string, updates: Partial<InsertProduct>): Promise<Product | null>;
-  deleteProduct(id: string): Promise<boolean>;
-  updateProductRating(id: string, rating: number, reviewCount: number): Promise<void>;
-
-  // Reviews
-  getReviewsByProduct(productId: string): Promise<Review[]>;
-  createReview(review: InsertReview): Promise<Review>;
-  deleteReview(reviewId: string): Promise<boolean>;
-
-  // Cart
-  getCartItems(sessionId: string): Promise<CartItemWithProduct[]>;
-  addToCart(item: InsertCartItem): Promise<CartItem>;
-  updateCartItemQuantity(productId: string, sessionId: string, quantity: number): Promise<void>;
-  removeFromCart(productId: string, sessionId: string): Promise<void>;
-  clearCart(sessionId: string): Promise<void>;
-
-  // Orders
-  getOrders(sessionId: string): Promise<OrderWithItems[]>;
-  getOrder(id: string): Promise<OrderWithItems | undefined>;
-  createOrder(order: InsertOrder, items: InsertOrderItem[]): Promise<OrderWithItems>;
-  getAllOrders(): Promise<OrderWithItems[]>;
-
-  // Admin
-  getStats(): Promise<{
-    totalUsers: number;
-    totalProducts: number;
-    totalOrders: number;
-    totalRevenue: number;
-    recentOrders: OrderWithItems[];
-  }>;
-  getUsers(): Promise<User[]>;
+interface FileStorageData {
+  users: Record<string, User>;
+  categories: Record<string, Category>;
+  products: Record<string, Product>;
+  reviews: Record<string, Review>;
+  cartItems: Record<string, CartItem>;
+  orders: Record<string, Order>;
+  orderItems: Record<string, OrderItem>;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<string, User>;
-  private categories: Map<string, Category>;
-  private products: Map<string, Product>;
-  private reviews: Map<string, Review>;
-  private cartItems: Map<string, CartItem>;
-  private orders: Map<string, Order>;
-  private orderItems: Map<string, OrderItem>;
+export class FileStorage implements IStorage {
+  private dataDir: string;
+  private dataFile: string;
+  private data: FileStorageData;
 
-  constructor() {
-    this.users = new Map();
-    this.categories = new Map();
-    this.products = new Map();
-    this.reviews = new Map();
-    this.cartItems = new Map();
-    this.orders = new Map();
-    this.orderItems = new Map();
+  constructor(dataDir: string = "data") {
+    this.dataDir = dataDir;
+    this.dataFile = join(dataDir, "storage.json");
+    
+    // Create data directory if it doesn't exist
+    if (!existsSync(this.dataDir)) {
+      mkdirSync(this.dataDir, { recursive: true });
+    }
 
-    this.seedData();
-    this.seedTestUsers();
+    // Load existing data or initialize with default data
+    this.loadData();
   }
 
-  private seedData() {
+  private loadData(): void {
+    try {
+      if (existsSync(this.dataFile)) {
+        const rawData = readFileSync(this.dataFile, 'utf8');
+        this.data = JSON.parse(rawData);
+        console.log("📂 Loaded existing data from file");
+      } else {
+        console.log("📂 No existing data file found, creating new one");
+        this.data = {
+          users: {},
+          categories: {},
+          products: {},
+          reviews: {},
+          cartItems: {},
+          orders: {},
+          orderItems: {},
+        };
+        this.seedInitialData();
+        this.saveData();
+      }
+    } catch (error) {
+      console.error("❌ Error loading data file:", error);
+      console.log("📂 Initializing with fresh data");
+      this.data = {
+        users: {},
+        categories: {},
+        products: {},
+        reviews: {},
+        cartItems: {},
+        orders: {},
+        orderItems: {},
+      };
+      this.seedInitialData();
+      this.saveData();
+    }
+  }
+
+  private saveData(): void {
+    try {
+      const jsonData = JSON.stringify(this.data, null, 2);
+      writeFileSync(this.dataFile, jsonData, 'utf8');
+    } catch (error) {
+      console.error("❌ Error saving data to file:", error);
+    }
+  }
+
+  private seedInitialData(): void {
+    // Seed categories
     const categories: Category[] = [
       { id: "electronics", name: "Electronics", icon: "electronics", imageUrl: null },
       { id: "fashion", name: "Fashion", icon: "fashion", imageUrl: null },
@@ -109,8 +107,9 @@ export class MemStorage implements IStorage {
       { id: "toys", name: "Toys & Games", icon: "toys", imageUrl: null },
     ];
 
-    categories.forEach((cat) => this.categories.set(cat.id, cat));
+    categories.forEach((cat) => this.data.categories[cat.id] = cat);
 
+    // Seed sample products
     const products: Product[] = [
       {
         id: "prod-1",
@@ -128,7 +127,7 @@ export class MemStorage implements IStorage {
         isPrime: true,
         isFeatured: true,
         isDeal: true,
-        specifications: "Driver Size: 40mm\nFrequency Response: 20Hz-20kHz\nBattery Life: 30 hours\nBluetooth: 5.0\nWeight: 250g",
+        specifications: "Driver Size: 40mm\\nFrequency Response: 20Hz-20kHz\\nBattery Life: 30 hours\\nBluetooth: 5.0\\nWeight: 250g",
       },
       {
         id: "prod-2",
@@ -146,7 +145,7 @@ export class MemStorage implements IStorage {
         isPrime: true,
         isFeatured: true,
         isDeal: true,
-        specifications: "Display: 1.4 inch AMOLED\nBattery: 7 days\nWater Resistance: 5 ATM\nGPS: Built-in\nSensors: Heart rate, SpO2, accelerometer",
+        specifications: "Display: 1.4 inch AMOLED\\nBattery: 7 days\\nWater Resistance: 5 ATM\\nGPS: Built-in\\nSensors: Heart rate, SpO2, accelerometer",
       },
       {
         id: "prod-3",
@@ -164,7 +163,7 @@ export class MemStorage implements IStorage {
         isPrime: true,
         isFeatured: false,
         isDeal: true,
-        specifications: "Power Output: 20W\nBattery Life: 24 hours\nWaterproof: IP67\nBluetooth: 5.0\nWeight: 540g",
+        specifications: "Power Output: 20W\\nBattery Life: 24 hours\\nWaterproof: IP67\\nBluetooth: 5.0\\nWeight: 540g",
       },
       {
         id: "prod-4",
@@ -182,7 +181,7 @@ export class MemStorage implements IStorage {
         isPrime: true,
         isFeatured: true,
         isDeal: false,
-        specifications: "Material: 100% Cotton\nFit: Classic\nCare: Machine washable\nCollar: Ribbed",
+        specifications: "Material: 100% Cotton\\nFit: Classic\\nCare: Machine washable\\nCollar: Ribbed",
       },
       {
         id: "prod-5",
@@ -200,7 +199,7 @@ export class MemStorage implements IStorage {
         isPrime: true,
         isFeatured: true,
         isDeal: true,
-        specifications: "Upper: Breathable mesh\nSole: Rubber\nCushioning: EVA foam\nWeight: 220g",
+        specifications: "Upper: Breathable mesh\\nSole: Rubber\\nCushioning: EVA foam\\nWeight: 220g",
       },
       {
         id: "prod-6",
@@ -218,7 +217,7 @@ export class MemStorage implements IStorage {
         isPrime: true,
         isFeatured: true,
         isDeal: true,
-        specifications: "Pieces: 12\nMaterial: Aluminum with non-stick coating\nOven Safe: Up to 400°F\nDishwasher Safe: Yes",
+        specifications: "Pieces: 12\\nMaterial: Aluminum with non-stick coating\\nOven Safe: Up to 400°F\\nDishwasher Safe: Yes",
       },
       {
         id: "prod-7",
@@ -236,7 +235,7 @@ export class MemStorage implements IStorage {
         isPrime: true,
         isFeatured: false,
         isDeal: true,
-        specifications: "Fill: Memory foam with cooling gel\nCover: Bamboo-derived rayon\nSize: Standard\nHypoallergenic: Yes",
+        specifications: "Fill: Memory foam with cooling gel\\nCover: Bamboo-derived rayon\\nSize: Standard\\nHypoallergenic: Yes",
       },
       {
         id: "prod-8",
@@ -254,7 +253,7 @@ export class MemStorage implements IStorage {
         isPrime: true,
         isFeatured: true,
         isDeal: true,
-        specifications: "Format: Paperback\nBooks: 5\nGenre: Contemporary Fiction\nPages: Varies",
+        specifications: "Format: Paperback\\nBooks: 5\\nGenre: Contemporary Fiction\\nPages: Varies",
       },
       {
         id: "prod-9",
@@ -272,7 +271,7 @@ export class MemStorage implements IStorage {
         isPrime: true,
         isFeatured: true,
         isDeal: false,
-        specifications: "Thickness: 6mm\nMaterial: TPE (eco-friendly)\nSize: 72 x 24 inches\nWeight: 2.5 lbs",
+        specifications: "Thickness: 6mm\\nMaterial: TPE (eco-friendly)\\nSize: 72 x 24 inches\\nWeight: 2.5 lbs",
       },
       {
         id: "prod-10",
@@ -290,7 +289,7 @@ export class MemStorage implements IStorage {
         isPrime: true,
         isFeatured: false,
         isDeal: true,
-        specifications: "Bands: 5 (2-40 lbs resistance)\nMaterial: Natural latex\nIncludes: Carrying bag, door anchor\nLength: 12 inches each",
+        specifications: "Bands: 5 (2-40 lbs resistance)\\nMaterial: Natural latex\\nIncludes: Carrying bag, door anchor\\nLength: 12 inches each",
       },
       {
         id: "prod-11",
@@ -308,7 +307,7 @@ export class MemStorage implements IStorage {
         isPrime: true,
         isFeatured: true,
         isDeal: true,
-        specifications: "Products: 4\nSkin Type: All\nParaben-Free: Yes\nCruelty-Free: Yes",
+        specifications: "Products: 4\\nSkin Type: All\\nParaben-Free: Yes\\nCruelty-Free: Yes",
       },
       {
         id: "prod-12",
@@ -326,7 +325,7 @@ export class MemStorage implements IStorage {
         isPrime: true,
         isFeatured: true,
         isDeal: true,
-        specifications: "Pieces: 1000\nAge: 4+\nMaterial: ABS plastic\nCompatibility: Major building block brands",
+        specifications: "Pieces: 1000\\nAge: 4+\\nMaterial: ABS plastic\\nCompatibility: Major building block brands",
       },
       {
         id: "prod-13",
@@ -344,7 +343,7 @@ export class MemStorage implements IStorage {
         isPrime: true,
         isFeatured: true,
         isDeal: true,
-        specifications: "Screen: 55 inch\nResolution: 4K Ultra HD\nHDR: Yes\nSmart Platform: Built-in\nRefresh Rate: 60Hz",
+        specifications: "Screen: 55 inch\\nResolution: 4K Ultra HD\\nHDR: Yes\\nSmart Platform: Built-in\\nRefresh Rate: 60Hz",
       },
       {
         id: "prod-14",
@@ -362,7 +361,7 @@ export class MemStorage implements IStorage {
         isPrime: true,
         isFeatured: false,
         isDeal: true,
-        specifications: "Battery Life: 6 hours (24 with case)\nBluetooth: 5.2\nWater Resistance: IPX4\nNoise Cancellation: Passive",
+        specifications: "Battery Life: 6 hours (24 with case)\\nBluetooth: 5.2\\nWater Resistance: IPX4\\nNoise Cancellation: Passive",
       },
       {
         id: "prod-15",
@@ -380,62 +379,20 @@ export class MemStorage implements IStorage {
         isPrime: true,
         isFeatured: true,
         isDeal: false,
-        specifications: "Material: Aluminum alloy\nCompatibility: 10-17 inch laptops\nAdjustable: Height and angle\nWeight Capacity: 22 lbs",
+        specifications: "Material: Aluminum alloy\\nCompatibility: 10-17 inch laptops\\nAdjustable: Height and angle\\nWeight Capacity: 22 lbs",
       },
     ];
 
-    products.forEach((prod) => this.products.set(prod.id, prod));
+    products.forEach((prod) => this.data.products[prod.id] = prod);
 
-    const sampleReviews: Review[] = [
-      {
-        id: "rev-1",
-        productId: "prod-1",
-        userName: "John D.",
-        rating: 5,
-        title: "Best headphones I've ever owned!",
-        content: "The sound quality is incredible and the noise cancellation is top-notch. Battery life is exactly as advertised. Highly recommend!",
-        isVerified: true,
-        helpfulCount: 42,
-        createdAt: "December 15, 2024",
-      },
-      {
-        id: "rev-2",
-        productId: "prod-1",
-        userName: "Sarah M.",
-        rating: 4,
-        title: "Great value for the price",
-        content: "Very comfortable for long listening sessions. The only minor issue is that the touch controls can be a bit finicky sometimes.",
-        isVerified: true,
-        helpfulCount: 28,
-        createdAt: "December 10, 2024",
-      },
-      {
-        id: "rev-3",
-        productId: "prod-2",
-        userName: "Mike T.",
-        rating: 5,
-        title: "Perfect fitness companion",
-        content: "Tracks everything accurately. Love the sleep tracking feature and the battery really does last a week. App is easy to use too.",
-        isVerified: true,
-        helpfulCount: 35,
-        createdAt: "December 12, 2024",
-      },
-    ];
-
-    sampleReviews.forEach((rev) => this.reviews.set(rev.id, rev));
-  }
-
-  private seedTestUsers() {
-    // Pre-hashed passwords to avoid async issues
-    // admin123 hashed with bcrypt
-    const adminPasswordHash = "$2b$10$kYk2w9T5IKYgihX5OQ2i7.pJqG/fnf57pHtQPqok8U0A3Pj63NdEm";
-    // user123 hashed with bcrypt  
-    const userPasswordHash = "$2b$10$bRD6bTbdA91bk9s06NPR3OF16gAbaCW1vK0ur83R7yN6lBjkL.siS";
+    // Seed users (with pre-hashed passwords to avoid async issues during init)
+    const adminPasswordHash = "$2b$10$kYk2w9T5IKYgihX5OQ2i7.pJqG/fnf57pHtQPqok8U0A3Pj63NdEm"; // admin123
+    const userPasswordHash = "$2b$10$bRD6bTbdA91bk9s06NPR3OF16gAbaCW1vK0ur83R7yN6lBjkL.siS"; // user123
 
     const adminUser = {
       id: "admin-1",
       username: "admin",
-      email: "admin@example.com", 
+      email: "admin@example.com",
       password: adminPasswordHash,
       role: "admin" as const,
       createdAt: new Date().toISOString(),
@@ -450,48 +407,34 @@ export class MemStorage implements IStorage {
       createdAt: new Date().toISOString(),
     };
 
-    this.users.set(adminUser.id, adminUser);
-    this.users.set(testUser.id, testUser);
-  }
+    this.data.users[adminUser.id] = adminUser;
+    this.data.users[testUser.id] = testUser;
 
-  private async seedUsers() {
-    try {
-      // Create admin user
-      const adminPassword = await bcrypt.hash("admin123", 10);
-      const adminUser = {
-        id: "admin-1",
-        username: "admin",
-        email: "admin@example.com",
-        password: adminPassword,
-        role: "admin" as const,
-        createdAt: new Date().toISOString(),
-      };
+    // Seed sample reviews
+    const sampleReviews: Review[] = [
+      {
+        id: "rev-1",
+        productId: "prod-1",
+        userName: "John D.",
+        rating: 5,
+        title: "Best headphones I've ever owned!",
+        content: "The sound quality is incredible and the noise cancellation is top-notch. Battery life is exactly as advertised. Highly recommend!",
+        isVerified: true,
+        helpfulCount: 42,
+        createdAt: "December 15, 2024",
+      },
+    ];
 
-      // Create test user  
-      const userPassword = await bcrypt.hash("user123", 10);
-      const testUser = {
-        id: "user-1",
-        username: "testuser",
-        email: "user@example.com",
-        password: userPassword,
-        role: "user" as const,
-        createdAt: new Date().toISOString(),
-      };
-
-      this.users.set(adminUser.id, adminUser);
-      this.users.set(testUser.id, testUser);
-    } catch (error) {
-      console.error("Failed to seed users:", error);
-    }
+    sampleReviews.forEach((rev) => this.data.reviews[rev.id] = rev);
   }
 
   // User methods
   async getUser(id: string): Promise<User | undefined> {
-    return this.users.get(id);
+    return this.data.users[id];
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
+    return Object.values(this.data.users).find(
       (user) => user.username === username || user.email === username
     );
   }
@@ -499,17 +442,22 @@ export class MemStorage implements IStorage {
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = randomUUID();
     const user: User = { ...insertUser, id };
-    this.users.set(id, user);
+    this.data.users[id] = user;
+    this.saveData();
     return user;
+  }
+
+  async getUsers(): Promise<User[]> {
+    return Object.values(this.data.users);
   }
 
   // Category methods
   async getCategories(): Promise<Category[]> {
-    return Array.from(this.categories.values());
+    return Object.values(this.data.categories);
   }
 
   async getCategory(id: string): Promise<Category | undefined> {
-    return this.categories.get(id);
+    return this.data.categories[id];
   }
 
   // Product methods
@@ -525,7 +473,7 @@ export class MemStorage implements IStorage {
     limit?: number;
     sortBy?: string;
   }): Promise<Product[]> {
-    let products = Array.from(this.products.values());
+    let products = Object.values(this.data.products);
 
     if (filters) {
       if (filters.category) {
@@ -535,11 +483,9 @@ export class MemStorage implements IStorage {
       if (filters.search) {
         const searchLower = filters.search.toLowerCase().trim();
         if (searchLower) {
-          // Split search query into individual words for more flexible matching
-          const searchWords = searchLower.split(/\s+/);
+          const searchWords = searchLower.split(/\\s+/);
           products = products.filter((p) => {
             const productText = `${p.name} ${p.description}`.toLowerCase();
-            // Check if ALL search words are present in the product text
             return searchWords.every(word => productText.includes(word));
           });
         }
@@ -563,7 +509,6 @@ export class MemStorage implements IStorage {
         products = products.filter((p) => p.isPrime);
       }
       
-      // Apply sorting before applying limit
       if (filters.sortBy) {
         switch (filters.sortBy) {
           case 'price-asc':
@@ -576,12 +521,10 @@ export class MemStorage implements IStorage {
             products = products.sort((a, b) => b.rating - a.rating);
             break;
           case 'newest':
-            // Sort by ID (newer products have later IDs in our system)
             products = products.sort((a, b) => b.id.localeCompare(a.id));
             break;
           case 'featured':
           default:
-            // Featured products first, then by rating
             products = products.sort((a, b) => {
               if (a.isFeatured && !b.isFeatured) return -1;
               if (!a.isFeatured && b.isFeatured) return 1;
@@ -600,18 +543,19 @@ export class MemStorage implements IStorage {
   }
 
   async getProduct(id: string): Promise<Product | undefined> {
-    return this.products.get(id);
+    return this.data.products[id];
   }
 
   async createProduct(insertProduct: InsertProduct): Promise<Product> {
     const id = randomUUID();
     const product: Product = { ...insertProduct, id };
-    this.products.set(id, product);
+    this.data.products[id] = product;
+    this.saveData();
     return product;
   }
 
   async updateProduct(id: string, updates: Partial<InsertProduct>): Promise<Product | null> {
-    const existingProduct = this.products.get(id);
+    const existingProduct = this.data.products[id];
     if (!existingProduct) {
       return null;
     }
@@ -619,38 +563,43 @@ export class MemStorage implements IStorage {
     const updatedProduct: Product = {
       ...existingProduct,
       ...updates,
-      id, // Ensure ID doesn't change
+      id,
     };
 
-    this.products.set(id, updatedProduct);
+    this.data.products[id] = updatedProduct;
+    this.saveData();
     return updatedProduct;
   }
 
   async deleteProduct(id: string): Promise<boolean> {
-    const exists = this.products.has(id);
+    const exists = this.data.products[id] !== undefined;
     if (exists) {
-      this.products.delete(id);
-      // Also remove associated reviews
-      const reviewsToDelete = Array.from(this.reviews.entries())
-        .filter(([_, review]) => review.productId === id)
-        .map(([reviewId]) => reviewId);
+      delete this.data.products[id];
       
-      reviewsToDelete.forEach(reviewId => this.reviews.delete(reviewId));
+      // Also remove associated reviews
+      Object.keys(this.data.reviews).forEach(reviewId => {
+        if (this.data.reviews[reviewId].productId === id) {
+          delete this.data.reviews[reviewId];
+        }
+      });
+      
+      this.saveData();
     }
     return exists;
   }
 
   async updateProductRating(id: string, rating: number, reviewCount: number): Promise<void> {
-    const product = this.products.get(id);
+    const product = this.data.products[id];
     if (product) {
       product.rating = rating;
       product.reviewCount = reviewCount;
+      this.saveData();
     }
   }
 
   // Review methods
   async getReviewsByProduct(productId: string): Promise<Review[]> {
-    return Array.from(this.reviews.values()).filter(
+    return Object.values(this.data.reviews).filter(
       (r) => r.productId === productId
     );
   }
@@ -658,23 +607,24 @@ export class MemStorage implements IStorage {
   async createReview(insertReview: InsertReview): Promise<Review> {
     const id = randomUUID();
     const review: Review = { ...insertReview, id };
-    this.reviews.set(id, review);
+    this.data.reviews[id] = review;
 
     // Update product rating
     const reviews = await this.getReviewsByProduct(insertReview.productId);
     const avgRating = reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;
     await this.updateProductRating(insertReview.productId, avgRating, reviews.length);
 
+    this.saveData();
     return review;
   }
 
   async deleteReview(reviewId: string): Promise<boolean> {
-    const review = this.reviews.get(reviewId);
+    const review = this.data.reviews[reviewId];
     if (!review) {
       return false;
     }
 
-    this.reviews.delete(reviewId);
+    delete this.data.reviews[reviewId];
 
     // Update product rating after deletion
     const reviews = await this.getReviewsByProduct(review.productId);
@@ -682,43 +632,22 @@ export class MemStorage implements IStorage {
       const avgRating = reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;
       await this.updateProductRating(review.productId, avgRating, reviews.length);
     } else {
-      // No reviews left, reset to default
       await this.updateProductRating(review.productId, 0, 0);
     }
 
-    return true;
-  }
-
-  async deleteReview(reviewId: string): Promise<boolean> {
-    const review = this.reviews.get(reviewId);
-    if (!review) {
-      return false;
-    }
-
-    this.reviews.delete(reviewId);
-
-    // Update product rating after deletion
-    const reviews = await this.getReviewsByProduct(review.productId);
-    if (reviews.length > 0) {
-      const avgRating = reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;
-      await this.updateProductRating(review.productId, avgRating, reviews.length);
-    } else {
-      // No reviews left, reset to default
-      await this.updateProductRating(review.productId, 0, 0);
-    }
-
+    this.saveData();
     return true;
   }
 
   // Cart methods
   async getCartItems(sessionId: string): Promise<CartItemWithProduct[]> {
-    const items = Array.from(this.cartItems.values()).filter(
+    const items = Object.values(this.data.cartItems).filter(
       (item) => item.sessionId === sessionId
     );
 
     const itemsWithProducts: CartItemWithProduct[] = [];
     for (const item of items) {
-      const product = this.products.get(item.productId);
+      const product = this.data.products[item.productId];
       if (product) {
         itemsWithProducts.push({ ...item, product });
       }
@@ -728,8 +657,7 @@ export class MemStorage implements IStorage {
   }
 
   async addToCart(insertItem: InsertCartItem): Promise<CartItem> {
-    // Check if item already exists
-    const existingItem = Array.from(this.cartItems.values()).find(
+    const existingItem = Object.values(this.data.cartItems).find(
       (item) =>
         item.productId === insertItem.productId &&
         item.sessionId === insertItem.sessionId
@@ -737,54 +665,55 @@ export class MemStorage implements IStorage {
 
     if (existingItem) {
       existingItem.quantity += insertItem.quantity;
+      this.saveData();
       return existingItem;
     }
 
     const id = randomUUID();
     const cartItem: CartItem = { ...insertItem, id };
-    this.cartItems.set(id, cartItem);
+    this.data.cartItems[id] = cartItem;
+    this.saveData();
     return cartItem;
   }
 
-  async updateCartItemQuantity(
-    productId: string,
-    sessionId: string,
-    quantity: number
-  ): Promise<void> {
-    const item = Array.from(this.cartItems.values()).find(
+  async updateCartItemQuantity(productId: string, sessionId: string, quantity: number): Promise<void> {
+    const item = Object.values(this.data.cartItems).find(
       (item) => item.productId === productId && item.sessionId === sessionId
     );
     if (item) {
       item.quantity = quantity;
+      this.saveData();
     }
   }
 
   async removeFromCart(productId: string, sessionId: string): Promise<void> {
-    for (const [id, item] of this.cartItems.entries()) {
+    Object.keys(this.data.cartItems).forEach(id => {
+      const item = this.data.cartItems[id];
       if (item.productId === productId && item.sessionId === sessionId) {
-        this.cartItems.delete(id);
-        break;
+        delete this.data.cartItems[id];
       }
-    }
+    });
+    this.saveData();
   }
 
   async clearCart(sessionId: string): Promise<void> {
-    for (const [id, item] of this.cartItems.entries()) {
-      if (item.sessionId === sessionId) {
-        this.cartItems.delete(id);
+    Object.keys(this.data.cartItems).forEach(id => {
+      if (this.data.cartItems[id].sessionId === sessionId) {
+        delete this.data.cartItems[id];
       }
-    }
+    });
+    this.saveData();
   }
 
   // Order methods
   async getOrders(sessionId: string): Promise<OrderWithItems[]> {
-    const orders = Array.from(this.orders.values()).filter(
+    const orders = Object.values(this.data.orders).filter(
       (order) => order.sessionId === sessionId
     );
 
     const ordersWithItems: OrderWithItems[] = [];
     for (const order of orders) {
-      const items = Array.from(this.orderItems.values()).filter(
+      const items = Object.values(this.data.orderItems).filter(
         (item) => item.orderId === order.id
       );
       ordersWithItems.push({ ...order, items });
@@ -796,41 +725,39 @@ export class MemStorage implements IStorage {
   }
 
   async getOrder(id: string): Promise<OrderWithItems | undefined> {
-    const order = this.orders.get(id);
+    const order = this.data.orders[id];
     if (!order) return undefined;
 
-    const items = Array.from(this.orderItems.values()).filter(
+    const items = Object.values(this.data.orderItems).filter(
       (item) => item.orderId === id
     );
 
     return { ...order, items };
   }
 
-  async createOrder(
-    insertOrder: InsertOrder,
-    items: InsertOrderItem[]
-  ): Promise<OrderWithItems> {
+  async createOrder(insertOrder: InsertOrder, items: InsertOrderItem[]): Promise<OrderWithItems> {
     const orderId = randomUUID();
     const order: Order = { ...insertOrder, id: orderId };
-    this.orders.set(orderId, order);
+    this.data.orders[orderId] = order;
 
     const orderItems: OrderItem[] = [];
     for (const item of items) {
       const itemId = randomUUID();
       const orderItem: OrderItem = { ...item, id: itemId, orderId };
-      this.orderItems.set(itemId, orderItem);
+      this.data.orderItems[itemId] = orderItem;
       orderItems.push(orderItem);
     }
 
+    this.saveData();
     return { ...order, items: orderItems };
   }
 
   async getAllOrders(): Promise<OrderWithItems[]> {
-    const ordersArray = Array.from(this.orders.values());
+    const ordersArray = Object.values(this.data.orders);
     const ordersWithItems: OrderWithItems[] = [];
 
     for (const order of ordersArray) {
-      const items = Array.from(this.orderItems.values()).filter(
+      const items = Object.values(this.data.orderItems).filter(
         item => item.orderId === order.id
       );
       ordersWithItems.push({ ...order, items });
@@ -848,16 +775,13 @@ export class MemStorage implements IStorage {
     totalRevenue: number;
     recentOrders: OrderWithItems[];
   }> {
-    const totalUsers = this.users.size;
-    const totalProducts = this.products.size;
-    const totalOrders = this.orders.size;
+    const totalUsers = Object.keys(this.data.users).length;
+    const totalProducts = Object.keys(this.data.products).length;
+    const totalOrders = Object.keys(this.data.orders).length;
     
-    let totalRevenue = 0;
-    for (const order of this.orders.values()) {
-      totalRevenue += order.total;
-    }
-
-    const recentOrders = (await this.getAllOrders()).slice(0, 10);
+    const allOrders = await this.getAllOrders();
+    const totalRevenue = allOrders.reduce((sum, order) => sum + order.total, 0);
+    const recentOrders = allOrders.slice(0, 5);
 
     return {
       totalUsers,
@@ -867,36 +791,4 @@ export class MemStorage implements IStorage {
       recentOrders,
     };
   }
-
-  async getUsers(): Promise<User[]> {
-    return Array.from(this.users.values());
-  }
 }
-
-// Function to get storage instance (can be swapped for database storage)
-export function createStorage(): IStorage {
-  // For development, use file-based persistent storage
-  // For production with DATABASE_URL, use DrizzleStorage
-  if (process.env.DATABASE_URL) {
-    try {
-      const { DrizzleStorage } = require("./database-storage");
-      console.log("✅ Using database storage");
-      return new DrizzleStorage();
-    } catch (error) {
-      console.warn("⚠️ Failed to initialize database storage, falling back to file storage:", error.message);
-    }
-  }
-  
-  // Use file storage for persistence in development
-  try {
-    console.log("💾 Using file-based persistent storage");
-    return new FileStorage();
-  } catch (error) {
-    console.warn("⚠️ Failed to initialize file storage, falling back to memory storage:", error.message);
-    console.log("📝 Using in-memory storage");
-    return new MemStorage();
-  }
-}
-
-// Export the storage instance
-export const storage = createStorage();

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation, Link } from "wouter";
 import { useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -32,6 +32,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { useCart, getCartSessionId } from "@/lib/cart-context";
+import { useAuth } from "@/lib/auth-context";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { shippingAddressSchema, type ShippingAddress } from "@shared/schema";
@@ -42,10 +43,19 @@ type CheckoutStep = "shipping" | "payment" | "review";
 export default function CheckoutPage() {
   const [, setLocation] = useLocation();
   const { items, subtotal, clearCart } = useCart();
+  const { user, isLoading: authLoading } = useAuth();
   const { toast } = useToast();
   const [currentStep, setCurrentStep] = useState<CheckoutStep>("shipping");
   const [shippingData, setShippingData] = useState<ShippingAddress | null>(null);
   const [paymentMethod, setPaymentMethod] = useState("card");
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!authLoading && !user) {
+      sessionStorage.setItem('redirectAfterLogin', '/checkout');
+      setLocation('/login');
+    }
+  }, [user, authLoading, setLocation]);
 
   const shipping = subtotal >= 35 ? 0 : 5.99;
   const tax = subtotal * 0.08;
@@ -65,8 +75,28 @@ export default function CheckoutPage() {
     },
   });
 
+  // Autofill form with user data when available
+  useEffect(() => {
+    if (user && form) {
+      // Extract first and last name from username as fallback
+      const nameParts = user.username.split(' ');
+      const displayName = nameParts.length > 1 ? user.username : `${user.username}`;
+      
+      form.setValue('fullName', displayName);
+      // You can extend this to include more user data if available
+      // form.setValue('phone', user.phone || '');
+      // form.setValue('addressLine1', user.address?.line1 || '');
+      // etc.
+    }
+  }, [user, form]);
+
   const placeOrderMutation = useMutation({
     mutationFn: async () => {
+      // Final authentication check before payment
+      if (!user) {
+        throw new Error("Authentication required to complete payment");
+      }
+
       const sessionId = getCartSessionId();
       return apiRequest("POST", "/api/orders", {
         sessionId,
@@ -90,14 +120,36 @@ export default function CheckoutPage() {
       clearCart();
       queryClient.invalidateQueries({ queryKey: ["/api/cart"] });
       queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+      toast({
+        title: "Order placed successfully!",
+        description: `Order #${order.id} has been confirmed.`,
+      });
       setLocation(`/order-confirmation/${order.id}`);
     },
-    onError: () => {
-      toast({
-        title: "Order failed",
-        description: "There was an error processing your order. Please try again.",
-        variant: "destructive",
-      });
+    onError: (error) => {
+      console.error("Order creation failed:", error);
+      
+      // Check if it's an authentication error
+      const isAuthError = error instanceof Error && 
+        (error.message.includes("Authentication") || 
+         error.message.includes("login") || 
+         error.message.includes("unauthorized"));
+
+      if (isAuthError) {
+        toast({
+          title: "Authentication Required",
+          description: "Please log in to complete your order.",
+          variant: "destructive",
+        });
+        sessionStorage.setItem('redirectAfterLogin', '/checkout');
+        setLocation('/login');
+      } else {
+        toast({
+          title: "Order failed",
+          description: error instanceof Error ? error.message : "There was an error processing your order. Please try again.",
+          variant: "destructive",
+        });
+      }
     },
   });
 
@@ -113,6 +165,16 @@ export default function CheckoutPage() {
   const handlePlaceOrder = () => {
     placeOrderMutation.mutate();
   };
+
+  // Show loading while checking authentication
+  if (authLoading) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 py-16 text-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+        <p className="text-muted-foreground">Loading checkout...</p>
+      </div>
+    );
+  }
 
   if (items.length === 0) {
     return (

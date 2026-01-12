@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/lib/theme-provider";
 import { CartProvider } from "@/lib/cart-context";
+import { WishlistProvider } from "@/lib/wishlist-context";
 import { AuthProvider } from "@/lib/auth-context";
 import { Header } from "@/components/header";
 import { Footer } from "@/components/footer";
@@ -12,6 +13,7 @@ import HomePage from "@/pages/home";
 import ProductsPage from "@/pages/products";
 import ProductDetailPage from "@/pages/product-detail";
 import CartPage from "@/pages/cart";
+import WishlistPage from "@/pages/wishlist";
 import CheckoutPage from "@/pages/checkout";
 import OrderConfirmationPage from "@/pages/order-confirmation";
 import OrdersPage from "@/pages/orders";
@@ -26,6 +28,7 @@ function Router() {
       <Route path="/products" component={ProductsPage} />
       <Route path="/product/:id" component={ProductDetailPage} />
       <Route path="/cart" component={CartPage} />
+      <Route path="/wishlist" component={WishlistPage} />
       <Route path="/checkout" component={CheckoutPage} />
       <Route path="/order-confirmation/:id" component={OrderConfirmationPage} />
       <Route path="/orders" component={OrdersPage} />
@@ -42,16 +45,18 @@ function App() {
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
           <AuthProvider>
-            <CartProvider>
-              <div className="min-h-screen flex flex-col bg-background">
-                <Header />
-                <main className="flex-1">
-                  <Router />
-                </main>
-                <Footer />
-              </div>
-              <Toaster />
-            </CartProvider>
+            <WishlistProvider>
+              <CartProvider>
+                <div className="min-h-screen flex flex-col bg-background">
+                  <Header />
+                  <main className="flex-1">
+                    <Router />
+                  </main>
+                  <Footer />
+                </div>
+                <Toaster />
+              </CartProvider>
+            </WishlistProvider>
           </AuthProvider>
         </TooltipProvider>
       </ThemeProvider>

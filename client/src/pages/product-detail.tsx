@@ -4,14 +4,14 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { 
   ShoppingCart, 
   Heart, 
-  Share2, 
   Truck, 
   Shield, 
   RotateCcw,
   Check,
   Minus,
   Plus,
-  ChevronRight
+  ChevronRight,
+  Trash2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,7 +31,10 @@ import {
 } from "@/components/ui/breadcrumb";
 import { StarRating, InteractiveStarRating } from "@/components/star-rating";
 import { ProductCard, ProductCardSkeleton } from "@/components/product-card";
+import { ProductImage } from "@/components/product-image";
 import { useCart } from "@/lib/cart-context";
+import { useWishlist } from "@/lib/wishlist-context";
+import { useAuth } from "@/lib/auth-context";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Product, Review } from "@shared/schema";
@@ -40,6 +43,8 @@ import { cn } from "@/lib/utils";
 export default function ProductDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { addItem } = useCart();
+  const { addToWishlist, removeFromWishlist, isInWishlist } = useWishlist();
+  const { user } = useAuth();
   const { toast } = useToast();
   const [quantity, setQuantity] = useState(1);
   const [selectedImage, setSelectedImage] = useState(0);
@@ -60,12 +65,37 @@ export default function ProductDetailPage() {
     enabled: !!product?.category,
   });
 
+  const deleteReviewMutation = useMutation({
+    mutationFn: async (reviewId: string) => {
+      return apiRequest("DELETE", `/api/reviews/${reviewId}`, {}, {
+        credentials: "include",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/reviews", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/products", id] });
+      toast({
+        title: "Review deleted",
+        description: "Your review has been deleted successfully.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to delete review. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const submitReviewMutation = useMutation({
     mutationFn: async (data: { rating: number; title: string; content: string }) => {
       return apiRequest("POST", `/api/reviews/${id}`, {
         ...data,
-        userName: "Guest User",
-        isVerified: false,
+        userName: user ? user.username : "Guest User",
+        isVerified: user ? true : false,
+      }, {
+        credentials: "include",
       });
     },
     onSuccess: () => {
@@ -97,8 +127,25 @@ export default function ProductDetailPage() {
     });
   };
 
+  const handleDeleteReview = (reviewId: string) => {
+    if (confirm("Are you sure you want to delete this review?")) {
+      deleteReviewMutation.mutate(reviewId);
+    }
+  };
+
   const handleSubmitReview = (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Check if user is logged in
+    if (!user) {
+      toast({
+        title: "Login required",
+        description: "Please log in to submit a review.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     if (!reviewTitle.trim() || !reviewContent.trim()) {
       toast({
         title: "Missing fields",
@@ -107,6 +154,7 @@ export default function ProductDetailPage() {
       });
       return;
     }
+    
     submitReviewMutation.mutate({
       rating: reviewRating,
       title: reviewTitle,
@@ -181,11 +229,12 @@ export default function ProductDetailPage() {
       <div className="grid lg:grid-cols-2 gap-8 mb-12">
         <div className="space-y-4">
           <div className="aspect-square rounded-lg overflow-hidden bg-muted">
-            <img
+            <ProductImage
               src={images[selectedImage]}
               alt={product.name}
               className="w-full h-full object-cover"
               data-testid="img-product-main"
+              showFallbackIcon={false}
             />
           </div>
           {images.length > 1 && (
@@ -202,7 +251,12 @@ export default function ProductDetailPage() {
                   )}
                   data-testid={`button-thumbnail-${index}`}
                 >
-                  <img src={img} alt="" className="w-full h-full object-cover" />
+                  <ProductImage 
+                    src={img} 
+                    alt="" 
+                    className="w-full h-full object-cover"
+                    showFallbackIcon={false}
+                  />
                 </button>
               ))}
             </div>
@@ -332,13 +386,29 @@ export default function ProductDetailPage() {
           </div>
 
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" className="gap-2" data-testid="button-wishlist">
-              <Heart className="h-4 w-4" />
-              Add to Wishlist
-            </Button>
-            <Button variant="outline" size="sm" className="gap-2" data-testid="button-share">
-              <Share2 className="h-4 w-4" />
-              Share
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className={cn("gap-2", isInWishlist(product.id) && "bg-red-50 text-red-600 border-red-200")}
+              onClick={() => {
+                if (isInWishlist(product.id)) {
+                  removeFromWishlist(product.id);
+                  toast({
+                    title: "Removed from wishlist",
+                    description: `${product.name} has been removed from your wishlist.`,
+                  });
+                } else {
+                  addToWishlist(product);
+                  toast({
+                    title: "Added to wishlist",
+                    description: `${product.name} has been added to your wishlist.`,
+                  });
+                }
+              }}
+              data-testid="button-wishlist"
+            >
+              <Heart className={cn("h-4 w-4", isInWishlist(product.id) && "fill-current")} />
+              {isInWishlist(product.id) ? "Remove from Wishlist" : "Add to Wishlist"}
             </Button>
           </div>
 
@@ -442,12 +512,24 @@ export default function ProductDetailPage() {
                 <Separator />
 
                 <form onSubmit={handleSubmitReview} className="space-y-4">
-                  <h4 className="font-semibold">Write a Review</h4>
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-semibold">Write a Review</h4>
+                    {user ? (
+                      <div className="text-sm text-muted-foreground">
+                        Reviewing as <span className="font-medium">{user.username}</span>
+                      </div>
+                    ) : (
+                      <div className="text-sm text-red-600">
+                        Please log in to write a review
+                      </div>
+                    )}
+                  </div>
                   <div>
                     <Label className="text-sm mb-2 block">Your Rating</Label>
                     <InteractiveStarRating
                       value={reviewRating}
                       onChange={setReviewRating}
+                      disabled={!user}
                     />
                   </div>
                   <div>
@@ -456,9 +538,10 @@ export default function ProductDetailPage() {
                     </Label>
                     <Input
                       id="review-title"
-                      placeholder="Summarize your experience"
+                      placeholder={user ? "Summarize your experience" : "Please log in to write a review"}
                       value={reviewTitle}
                       onChange={(e) => setReviewTitle(e.target.value)}
+                      disabled={!user}
                       data-testid="input-review-title"
                     />
                   </div>
@@ -468,20 +551,22 @@ export default function ProductDetailPage() {
                     </Label>
                     <Textarea
                       id="review-content"
-                      placeholder="What did you like or dislike?"
+                      placeholder={user ? "What did you like or dislike?" : "Please log in to write a review"}
                       value={reviewContent}
                       onChange={(e) => setReviewContent(e.target.value)}
                       rows={4}
+                      disabled={!user}
                       data-testid="input-review-content"
                     />
                   </div>
                   <Button
                     type="submit"
                     className="w-full"
-                    disabled={submitReviewMutation.isPending}
+                    disabled={submitReviewMutation.isPending || !user}
                     data-testid="button-submit-review"
                   >
-                    {submitReviewMutation.isPending ? "Submitting..." : "Submit Review"}
+                    {!user ? "Log in to submit review" : 
+                     submitReviewMutation.isPending ? "Submitting..." : "Submit Review"}
                   </Button>
                 </form>
               </CardContent>
@@ -523,6 +608,18 @@ export default function ProductDetailPage() {
                               <Badge variant="secondary" className="text-xs">
                                 Verified Purchase
                               </Badge>
+                            )}
+                            {user && user.username === review.userName && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="ml-auto text-red-600 hover:text-red-700 hover:bg-red-50 p-1 h-auto"
+                                onClick={() => handleDeleteReview(review.id)}
+                                disabled={deleteReviewMutation.isPending}
+                                title="Delete your review"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
                             )}
                           </div>
                           <StarRating rating={review.rating} size="sm" className="my-1" />

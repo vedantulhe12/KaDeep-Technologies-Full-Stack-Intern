@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { ProductImage, useImageLoader } from '@/components/product-image';
 import { 
   Users, 
   Package, 
@@ -29,8 +30,10 @@ interface AdminStats {
 interface Product {
   id: string;
   name: string;
+  description: string;
   price: number;
   category: string;
+  imageUrl: string;
   inStock: boolean;
   stockCount: number;
 }
@@ -68,6 +71,16 @@ export function AdminPanel() {
     stockCount: ''
   });
 
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [editProduct, setEditProduct] = useState({
+    name: '',
+    description: '',
+    price: '',
+    category: '',
+    imageUrl: '',
+    stockCount: ''
+  });
+
   useEffect(() => {
     if (user?.role === 'admin') {
       fetchAdminData();
@@ -81,14 +94,26 @@ export function AdminPanel() {
       const statsResponse = await fetch('/api/admin/stats', { credentials: 'include' });
       if (statsResponse.ok) {
         const statsData = await statsResponse.json();
-        setStats(statsData);
+        console.log('Fetched stats:', statsData);
+        // Ensure we have all required fields with proper fallbacks
+        setStats({
+          totalUsers: statsData.totalUsers || 0,
+          totalProducts: statsData.totalProducts || 0,
+          totalOrders: statsData.totalOrders || 0,
+          totalRevenue: statsData.totalRevenue || 0
+        });
+      } else {
+        console.error('Failed to fetch stats:', await statsResponse.text());
       }
 
       // Fetch products
       const productsResponse = await fetch('/api/admin/products', { credentials: 'include' });
       if (productsResponse.ok) {
         const productsData = await productsResponse.json();
+        console.log('Fetched products:', productsData);
         setProducts(productsData);
+      } else {
+        console.error('Failed to fetch products:', await productsResponse.text());
       }
 
       // Fetch users
@@ -139,10 +164,99 @@ export function AdminPanel() {
       });
 
       if (response.ok) {
+        const createdProduct = await response.json();
+        console.log('Product created successfully:', createdProduct);
         setNewProduct({ name: '', description: '', price: '', category: '', imageUrl: '', stockCount: '' });
         fetchAdminData(); // Refresh data
       } else {
-        setError('Failed to create product');
+        const errorText = await response.text();
+        console.error('Failed to create product:', errorText);
+        setError('Failed to create product: ' + errorText);
+      }
+    } catch (error) {
+      setError('Network error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleEditProduct = (product: Product) => {
+    setEditingProduct(product);
+    setEditProduct({
+      name: product.name,
+      description: product.description,
+      price: product.price.toString(),
+      category: product.category,
+      imageUrl: product.imageUrl,
+      stockCount: product.stockCount.toString()
+    });
+  };
+
+  const handleUpdateProduct = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingProduct) return;
+    
+    setIsLoading(true);
+    setError('');
+
+    try {
+      const productData = {
+        name: editProduct.name,
+        description: editProduct.description,
+        price: parseFloat(editProduct.price),
+        category: editProduct.category,
+        imageUrl: editProduct.imageUrl,
+        stockCount: parseInt(editProduct.stockCount),
+        inStock: parseInt(editProduct.stockCount) > 0
+      };
+
+      const response = await fetch(`/api/admin/products/${editingProduct.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify(productData),
+      });
+
+      if (response.ok) {
+        console.log('Product updated successfully');
+        setEditingProduct(null);
+        setEditProduct({ name: '', description: '', price: '', category: '', imageUrl: '', stockCount: '' });
+        fetchAdminData(); // Refresh data
+      } else {
+        const errorText = await response.text();
+        console.error('Failed to update product:', errorText);
+        setError('Failed to update product: ' + errorText);
+      }
+    } catch (error) {
+      setError('Network error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDeleteProduct = async (productId: string) => {
+    if (!confirm('Are you sure you want to delete this product? This action cannot be undone.')) {
+      return;
+    }
+
+    setIsLoading(true);
+    setError('');
+
+    try {
+      const response = await fetch(`/api/admin/products/${productId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+
+      if (response.ok) {
+        console.log('Product deleted successfully');
+        fetchAdminData(); // Refresh data
+      } else {
+        const errorText = await response.text();
+        console.error('Failed to delete product:', errorText);
+        setError('Failed to delete product: ' + errorText);
       }
     } catch (error) {
       setError('Network error');
@@ -195,24 +309,6 @@ export function AdminPanel() {
               </div>
             </CardContent>
           </Card>
-          <Card>
-            <CardContent className="flex items-center p-6">
-              <ShoppingBag className="h-8 w-8 text-orange-600" />
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Total Orders</p>
-                <p className="text-2xl font-bold">{stats.totalOrders}</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="flex items-center p-6">
-              <DollarSign className="h-8 w-8 text-purple-600" />
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Total Revenue</p>
-                <p className="text-2xl font-bold">${stats.totalRevenue?.toFixed(2) || '0.00'}</p>
-              </div>
-            </CardContent>
-          </Card>
         </div>
 
         {/* Management Tabs */}
@@ -231,6 +327,13 @@ export function AdminPanel() {
                     <Plus className="mr-2 h-5 w-5" />
                     Add New Product
                   </CardTitle>
+                  <CardDescription>
+                    <strong>Image URL Tips:</strong> Use direct image links (ending in .jpg, .png, .webp). 
+                    Try free sources like <a href="https://unsplash.com" target="_blank" className="text-blue-600 hover:underline">Unsplash</a>, 
+                    <a href="https://pixabay.com" target="_blank" className="text-blue-600 hover:underline mx-1">Pixabay</a>, or 
+                    <a href="https://pexels.com" target="_blank" className="text-blue-600 hover:underline mx-1">Pexels</a>. 
+                    Avoid Google Images as they often have CORS restrictions.
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <form onSubmit={handleCreateProduct} className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -291,6 +394,19 @@ export function AdminPanel() {
                         onChange={(e) => setNewProduct({ ...newProduct, imageUrl: e.target.value })}
                         required
                       />
+                      {newProduct.imageUrl && (
+                        <div className="mt-2">
+                          <Label>Preview:</Label>
+                          <div className="w-32 h-32 border rounded-md overflow-hidden bg-muted">
+                            <ProductImage
+                              src={newProduct.imageUrl}
+                              alt="Product preview"
+                              className="w-full h-full object-cover"
+                              showFallbackIcon={true}
+                            />
+                          </div>
+                        </div>
+                      )}
                     </div>
                     <div className="md:col-span-2">
                       <Button type="submit" disabled={isLoading}>
@@ -311,16 +427,28 @@ export function AdminPanel() {
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        <TableHead>Image</TableHead>
                         <TableHead>Name</TableHead>
                         <TableHead>Category</TableHead>
                         <TableHead>Price</TableHead>
                         <TableHead>Stock</TableHead>
                         <TableHead>Status</TableHead>
+                        <TableHead>Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {products.map((product) => (
                         <TableRow key={product.id}>
+                          <TableCell>
+                            <div className="w-12 h-12 rounded-md overflow-hidden bg-muted">
+                              <ProductImage
+                                src={product.imageUrl}
+                                alt={product.name}
+                                className="w-full h-full object-cover"
+                                showFallbackIcon={true}
+                              />
+                            </div>
+                          </TableCell>
                           <TableCell className="font-medium">{product.name}</TableCell>
                           <TableCell>{product.category}</TableCell>
                           <TableCell>${product.price}</TableCell>
@@ -330,12 +458,130 @@ export function AdminPanel() {
                               {product.inStock ? "In Stock" : "Out of Stock"}
                             </Badge>
                           </TableCell>
+                          <TableCell>
+                            <div className="flex space-x-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleEditProduct(product)}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                onClick={() => handleDeleteProduct(product.id)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
                   </Table>
                 </CardContent>
               </Card>
+
+              {/* Edit Product Modal */}
+              {editingProduct && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center">
+                      <Edit className="mr-2 h-5 w-5" />
+                      Edit Product: {editingProduct.name}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <form onSubmit={handleUpdateProduct} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="edit-product-name">Product Name</Label>
+                        <Input
+                          id="edit-product-name"
+                          value={editProduct.name}
+                          onChange={(e) => setEditProduct({ ...editProduct, name: e.target.value })}
+                          required
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="edit-product-price">Price</Label>
+                        <Input
+                          id="edit-product-price"
+                          type="number"
+                          step="0.01"
+                          value={editProduct.price}
+                          onChange={(e) => setEditProduct({ ...editProduct, price: e.target.value })}
+                          required
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="edit-product-category">Category</Label>
+                        <Input
+                          id="edit-product-category"
+                          value={editProduct.category}
+                          onChange={(e) => setEditProduct({ ...editProduct, category: e.target.value })}
+                          required
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="edit-product-stock">Stock Count</Label>
+                        <Input
+                          id="edit-product-stock"
+                          type="number"
+                          value={editProduct.stockCount}
+                          onChange={(e) => setEditProduct({ ...editProduct, stockCount: e.target.value })}
+                          required
+                        />
+                      </div>
+                      <div className="md:col-span-2">
+                        <Label htmlFor="edit-product-description">Description</Label>
+                        <Input
+                          id="edit-product-description"
+                          value={editProduct.description}
+                          onChange={(e) => setEditProduct({ ...editProduct, description: e.target.value })}
+                          required
+                        />
+                      </div>
+                      <div className="md:col-span-2">
+                        <Label htmlFor="edit-product-image">Image URL</Label>
+                        <Input
+                          id="edit-product-image"
+                          type="url"
+                          value={editProduct.imageUrl}
+                          onChange={(e) => setEditProduct({ ...editProduct, imageUrl: e.target.value })}
+                          required
+                        />
+                        {editProduct.imageUrl && (
+                          <div className="mt-2">
+                            <Label>Preview:</Label>
+                            <div className="w-32 h-32 border rounded-md overflow-hidden bg-muted">
+                              <ProductImage
+                                src={editProduct.imageUrl}
+                                alt="Product preview"
+                                className="w-full h-full object-cover"
+                                showFallbackIcon={true}
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      <div className="md:col-span-2 flex space-x-2">
+                        <Button type="submit" disabled={isLoading}>
+                          {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                          Update Product
+                        </Button>
+                        <Button 
+                          type="button" 
+                          variant="outline" 
+                          onClick={() => setEditingProduct(null)}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </form>
+                  </CardContent>
+                </Card>
+              )}
             </div>
           </TabsContent>
 

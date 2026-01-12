@@ -1,11 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { ArrowRight, Truck, Shield, RotateCcw, Headphones } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { HeroCarousel } from "@/components/hero-carousel";
 import { ProductCard, ProductCardSkeleton } from "@/components/product-card";
 import { CategoryCard, CategoryCardSkeleton } from "@/components/category-card";
+import { useAuth } from "@/lib/auth-context";
 import type { Product, Category } from "@shared/schema";
 
 const features = [
@@ -32,6 +33,9 @@ const features = [
 ];
 
 export default function HomePage() {
+  const [, setLocation] = useLocation();
+  const { user } = useAuth();
+  
   const { data: categories, isLoading: categoriesLoading } = useQuery<Category[]>({
     queryKey: ["/api/categories"],
   });
@@ -128,16 +132,32 @@ export default function HomePage() {
           ))}
         </section>
 
-        <section className="bg-sidebar rounded-lg p-8 text-center">
-          <h2 className="text-2xl font-bold mb-4">Join ShopHub Today</h2>
-          <p className="text-muted-foreground mb-6 max-w-xl mx-auto">
-            Create an account to enjoy personalized recommendations, faster checkout, and exclusive deals.
-          </p>
-          <div className="flex gap-4 justify-center flex-wrap">
-            <Button size="lg" data-testid="button-create-account">Create Account</Button>
-            <Button size="lg" variant="outline" data-testid="button-sign-in">Sign In</Button>
-          </div>
-        </section>
+        {/* Only show Join ShopHub section for unauthenticated users */}
+        {!user && (
+          <section className="bg-sidebar rounded-lg p-8 text-center">
+            <h2 className="text-2xl font-bold mb-4">Join ShopHub Today</h2>
+            <p className="text-muted-foreground mb-6 max-w-xl mx-auto">
+              Create an account to enjoy personalized recommendations, faster checkout, and exclusive deals.
+            </p>
+            <div className="flex gap-4 justify-center flex-wrap">
+              <Button 
+                size="lg" 
+                data-testid="button-create-account"
+                onClick={() => setLocation('/login?tab=register')}
+              >
+                Create Account
+              </Button>
+              <Button 
+                size="lg" 
+                variant="outline" 
+                data-testid="button-sign-in"
+                onClick={() => setLocation('/login')}
+              >
+                Sign In
+              </Button>
+            </div>
+          </section>
+        )}
       </div>
     </div>
   );

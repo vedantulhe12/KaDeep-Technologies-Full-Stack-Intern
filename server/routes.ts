@@ -90,6 +90,8 @@ export async function registerRoutes(
           "GET /api/admin/stats": "Get dashboard statistics (admin only)",
           "GET /api/admin/products": "Get all products for admin (admin only)",
           "POST /api/admin/products": "Create new product (admin only)",
+          "PUT /api/admin/products/:id": "Update product (admin only)",
+          "DELETE /api/admin/products/:id": "Delete product (admin only)",
           "GET /api/admin/orders": "Get all orders (admin only)",
           "GET /api/admin/users": "Get all users (admin only)"
         }
@@ -361,7 +363,10 @@ export async function registerRoutes(
       const filters: any = {};
       
       if (req.query.category) filters.category = req.query.category as string;
-      if (req.query.search) filters.search = req.query.search as string;
+      if (req.query.search) {
+        filters.search = req.query.search as string;
+        console.log(`🔍 Search query received: "${filters.search}"`);
+      }
       if (req.query.deals === "true") filters.deals = true;
       if (req.query.featured === "true") filters.featured = true;
       if (req.query.minPrice) filters.minPrice = parseFloat(req.query.minPrice as string);
@@ -369,8 +374,17 @@ export async function registerRoutes(
       if (req.query.minRating) filters.minRating = parseFloat(req.query.minRating as string);
       if (req.query.isPrime === "true") filters.isPrime = true;
       if (req.query.limit) filters.limit = parseInt(req.query.limit as string);
+      if (req.query.sortBy) filters.sortBy = req.query.sortBy as string;
 
       const products = await storage.getProducts(filters);
+      
+      if (filters.search) {
+        console.log(`🔍 Search for "${filters.search}" returned ${products.length} products`);
+      }
+      if (filters.sortBy) {
+        console.log(`📊 Sorted by: ${filters.sortBy}`);
+      }
+      
       res.json(products);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch products" });
@@ -550,6 +564,39 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Invalid review data", details: error.errors });
       }
       res.status(500).json({ error: "Failed to create review" });
+    }
+  });
+
+  /**
+   * @swagger
+   * /api/reviews/{reviewId}:
+   *   delete:
+   *     summary: Delete a review
+   *     tags: [Reviews]
+   *     parameters:
+   *       - in: path
+   *         name: reviewId
+   *         required: true
+   *         schema:
+   *           type: string
+   *         description: Review ID to delete
+   *     responses:
+   *       200:
+   *         description: Review deleted successfully
+   *       404:
+   *         description: Review not found
+   *       500:
+   *         description: Failed to delete review
+   */
+  app.delete("/api/reviews/:reviewId", async (req: Request, res: Response) => {
+    try {
+      const deleted = await storage.deleteReview(req.params.reviewId);
+      if (!deleted) {
+        return res.status(404).json({ error: "Review not found" });
+      }
+      res.json({ message: "Review deleted successfully" });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete review" });
     }
   });
 
@@ -863,15 +910,124 @@ export async function registerRoutes(
 
   app.post("/api/admin/products", requireAuth, requireAdmin, async (req, res) => {
     try {
+      // Validate and create product data
       const productData = {
-        ...req.body,
-        id: "prod-" + Date.now(),
+        name: req.body.name,
+        description: req.body.description,
+        price: Number(req.body.price),
+        originalPrice: req.body.originalPrice ? Number(req.body.originalPrice) : undefined,
+        category: req.body.category,
+        imageUrl: req.body.imageUrl,
+        stockCount: Number(req.body.stockCount),
+        inStock: Number(req.body.stockCount) > 0,
+        rating: req.body.rating || 0,
+        reviewCount: req.body.reviewCount || 0,
+        isPrime: req.body.isPrime || false,
+        isFeatured: req.body.isFeatured || false,
+        isDeal: req.body.isDeal || false,
       };
       
+      console.log('Creating product:', productData);
       const product = await storage.createProduct(productData);
+      console.log('Product created:', product);
       res.status(201).json(product);
     } catch (error) {
-      res.status(500).json({ error: "Failed to create product" });
+      console.error('Product creation error:', error);
+      res.status(500).json({ error: "Failed to create product", details: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  /**
+   * @swagger
+   * /api/admin/products/{id}:
+   *   put:
+   *     summary: Update product
+   *     tags: [Admin]
+   *     security:
+   *       - sessionAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             $ref: '#/components/schemas/Product'
+   *     responses:
+   *       200:
+   *         description: Product updated successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/Product'
+   *       404:
+   *         description: Product not found
+   *   delete:
+   *     summary: Delete product
+   *     tags: [Admin]
+   *     security:
+   *       - sessionAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Product deleted successfully
+   *       404:
+   *         description: Product not found
+   */
+  app.put("/api/admin/products/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const updates = {
+        name: req.body.name,
+        description: req.body.description,
+        price: req.body.price ? Number(req.body.price) : undefined,
+        originalPrice: req.body.originalPrice ? Number(req.body.originalPrice) : undefined,
+        category: req.body.category,
+        imageUrl: req.body.imageUrl,
+        stockCount: req.body.stockCount ? Number(req.body.stockCount) : undefined,
+        inStock: req.body.stockCount ? Number(req.body.stockCount) > 0 : undefined,
+        isPrime: req.body.isPrime,
+        isFeatured: req.body.isFeatured,
+        isDeal: req.body.isDeal,
+      };
+      
+      // Remove undefined values
+      Object.keys(updates).forEach(key => updates[key as keyof typeof updates] === undefined && delete updates[key as keyof typeof updates]);
+      
+      const updatedProduct = await storage.updateProduct(id, updates);
+      if (!updatedProduct) {
+        return res.status(404).json({ error: "Product not found" });
+      }
+      
+      res.json(updatedProduct);
+    } catch (error) {
+      console.error('Product update error:', error);
+      res.status(500).json({ error: "Failed to update product", details: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  app.delete("/api/admin/products/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const deleted = await storage.deleteProduct(id);
+      
+      if (!deleted) {
+        return res.status(404).json({ error: "Product not found" });
+      }
+      
+      res.json({ message: "Product deleted successfully" });
+    } catch (error) {
+      console.error('Product deletion error:', error);
+      res.status(500).json({ error: "Failed to delete product" });
     }
   });
 

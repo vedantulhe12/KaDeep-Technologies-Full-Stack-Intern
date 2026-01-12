@@ -35,7 +35,14 @@ export function LoginPage() {
     const result = await login(loginForm.email, loginForm.password);
     
     if (result.success) {
-      setLocation('/');
+      // Check for redirect URL in sessionStorage
+      const redirectTo = sessionStorage.getItem('redirectAfterLogin');
+      if (redirectTo) {
+        sessionStorage.removeItem('redirectAfterLogin');
+        setLocation(redirectTo);
+      } else {
+        setLocation('/');
+      }
     } else {
       setError(result.error || 'Login failed');
     }
@@ -63,7 +70,14 @@ export function LoginPage() {
     const result = await register(registerForm.username, registerForm.email, registerForm.password);
     
     if (result.success) {
-      setLocation('/');
+      // Check for redirect URL in sessionStorage
+      const redirectTo = sessionStorage.getItem('redirectAfterLogin');
+      if (redirectTo) {
+        sessionStorage.removeItem('redirectAfterLogin');
+        setLocation(redirectTo);
+      } else {
+        setLocation('/');
+      }
     } else {
       setError(result.error || 'Registration failed');
     }

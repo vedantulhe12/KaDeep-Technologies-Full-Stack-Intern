@@ -4,6 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StarRating } from "@/components/star-rating";
+import { ProductImage } from "@/components/product-image";
 import { useCart } from "@/lib/cart-context";
 import { useToast } from "@/hooks/use-toast";
 import type { Product } from "@shared/schema";
@@ -42,11 +43,12 @@ export function ProductCard({ product, className }: ProductCardProps) {
         data-testid={`card-product-${product.id}`}
       >
         <div className="relative aspect-square overflow-hidden rounded-t-md bg-muted">
-          <img
+          <ProductImage
             src={product.imageUrl}
             alt={product.name}
             className="h-full w-full object-cover transition-transform group-hover:scale-105"
             loading="lazy"
+            showFallbackIcon={false}
           />
           {product.isDeal && discount > 0 && (
             <Badge className="absolute top-2 left-2" variant="destructive">

@@ -1,18 +1,31 @@
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { ShoppingCart, Minus, Plus, Trash2, ArrowLeft, ShoppingBag } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { useCart } from "@/lib/cart-context";
+import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 
 export default function CartPage() {
+  const [, setLocation] = useLocation();
   const { items, itemCount, subtotal, removeItem, updateQuantity, isLoading } = useCart();
+  const { user } = useAuth();
 
   const shipping = subtotal >= 35 ? 0 : 5.99;
   const tax = subtotal * 0.08;
   const total = subtotal + shipping + tax;
+
+  const handleCheckout = () => {
+    if (!user) {
+      // Store the intended destination for redirect after login
+      sessionStorage.setItem('redirectAfterLogin', '/checkout');
+      setLocation('/login');
+    } else {
+      setLocation('/checkout');
+    }
+  };
 
   if (isLoading) {
     return (
@@ -203,11 +216,14 @@ export default function CartPage() {
               </div>
             </CardContent>
             <CardFooter className="flex-col gap-3">
-              <Link href="/checkout" className="w-full">
-                <Button className="w-full" size="lg" data-testid="button-proceed-checkout">
-                  Proceed to Checkout
-                </Button>
-              </Link>
+              <Button 
+                className="w-full" 
+                size="lg" 
+                onClick={handleCheckout}
+                data-testid="button-proceed-checkout"
+              >
+                {user ? 'Proceed to Checkout' : 'Sign In to Checkout'}
+              </Button>
               <Link href="/products" className="w-full">
                 <Button variant="outline" className="w-full" data-testid="button-continue-shopping">
                   Continue Shopping

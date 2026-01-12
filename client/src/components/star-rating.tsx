@@ -77,6 +77,7 @@ interface InteractiveStarRatingProps {
   onChange: (value: number) => void;
   maxRating?: number;
   size?: "sm" | "md" | "lg";
+  disabled?: boolean;
 }
 
 export function InteractiveStarRating({
@@ -84,6 +85,7 @@ export function InteractiveStarRating({
   onChange,
   maxRating = 5,
   size = "md",
+  disabled = false,
 }: InteractiveStarRatingProps) {
   const sizeClasses = {
     sm: "h-5 w-5",
@@ -97,8 +99,14 @@ export function InteractiveStarRating({
         <button
           key={i}
           type="button"
-          onClick={() => onChange(i + 1)}
-          className="hover-elevate active-elevate-2 rounded-sm p-0.5"
+          onClick={() => !disabled && onChange(i + 1)}
+          className={cn(
+            "rounded-sm p-0.5",
+            disabled 
+              ? "cursor-not-allowed opacity-50" 
+              : "hover-elevate active-elevate-2"
+          )}
+          disabled={disabled}
           data-testid={`button-star-${i + 1}`}
         >
           <Star

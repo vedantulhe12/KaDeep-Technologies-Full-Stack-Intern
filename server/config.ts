@@ -26,7 +26,7 @@ const envSchema = z.object({
   UPLOAD_ALLOWED_TYPES: z.string().default("image/jpeg,image/png,image/webp"),
   
   // CORS
-  CORS_ORIGIN: z.string().default("http://localhost:5173"),
+  CORS_ORIGIN: z.string().default("http://zlocalhost:5173"),
 });
 
 // Parse and validate environment variables
