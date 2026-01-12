@@ -689,27 +689,6 @@ export class MemStorage implements IStorage {
     return true;
   }
 
-  async deleteReview(reviewId: string): Promise<boolean> {
-    const review = this.reviews.get(reviewId);
-    if (!review) {
-      return false;
-    }
-
-    this.reviews.delete(reviewId);
-
-    // Update product rating after deletion
-    const reviews = await this.getReviewsByProduct(review.productId);
-    if (reviews.length > 0) {
-      const avgRating = reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;
-      await this.updateProductRating(review.productId, avgRating, reviews.length);
-    } else {
-      // No reviews left, reset to default
-      await this.updateProductRating(review.productId, 0, 0);
-    }
-
-    return true;
-  }
-
   // Cart methods
   async getCartItems(sessionId: string): Promise<CartItemWithProduct[]> {
     const items = Array.from(this.cartItems.values()).filter(
